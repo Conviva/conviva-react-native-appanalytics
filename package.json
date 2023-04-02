@@ -1,0 +1,22 @@
+{
+  "name": "@convivainc/conviva-react-native-appanalytics",
+  "version": "0.0.1",
+  "description": "Conviva React Native Application Analytics Library",
+  "main": "conviva-react-native-appanalytics.js",
+  "repository": {
+    "type": "git",
+    "url": "git+github.com:Conviva/conviva-react-native-appanalytics.git"
+  },
+  "keywords": [
+    "Conviva",
+    "Application",
+    "Analytics",
+    "React Native"
+  ],
+  "author": "Conviva Inc",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Conviva/conviva-react-native-appanalytics/issues"
+  },
+  "homepage": "https://github.com/Conviva/conviva-react-native-appanalytics#readme"
+}

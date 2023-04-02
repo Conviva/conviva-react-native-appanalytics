@@ -1,2 +1,103 @@
 # conviva-react-native-appanalytics
-Conviva React Native App Analytics Sensor
+## Application Analytics for Conviva React Native Sensor
+Use Application Analytics to autocollect events, track application specific events and state changes, and track users anonymously. Internally it is built on top of the Native [Android](https://github.com/Conviva/conviva-android-appanalytics) and [iOS](https://github.com/Conviva/conviva-ios-appanalytics) Sensors
+
+### Initialization
+
+#### Install via npm:
+```js
+npm install @convivainc/conviva-react-native-appanalytics --save
+npx pod-install
+```
+#### Install the Android React Native wrapper via Maven:
+```
+dependencies {
+    ...
+    implementation 'com.conviva.sdk:conviva-react-native-tracker:<version>'
+}
+```
+#### Install the iOS React Native wrapper via Cocoapods:
+```
+pod 'RNConvivaAppAnalytics', 'version'
+```
+#### Initialize the tracker
+```js
+import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+createTracker(customerKey: string, appName: string);
+
+const tracker = createTracker(
+  customerKey,
+  appName
+);
+```
+<strong>customerKey</strong> - a string to identify specific customer account. Different keys shall be used for development / debug versus production environment. Find your keys on the account info page in Pulse.
+
+<strong>appName</strong> - a string value used to distinguish your applications. Simple values that are unique across all of your integrated platforms work best here.
+
+#### Set the user id (viewer id)
+```js
+tracker.setSubjectData({userId?: string});
+
+let viewerId = "testuserid@test.com"
+tracker.setSubjectData({userId: viewerId});
+```
+
+#### Report PageView Events for tracking in-app page navigations.
+```js
+tracker.trackPageViewEvent({pageUrl: string, pageTitle?: string, referrer?: string});
+
+let pageViewEvent = {'pageUrl' : 'https://allpopulated.com',
+      'pageTitle' : 'some title',
+      'referrer' : 'http://refr.com'};
+tracker.trackPageViewEvent(pageViewEvent);
+```
+
+#### Custom event tracking to track your application specific events and state changes
+Use trackCustomEvent() API to track all kinds of events. This API provides 2 fields to describe the tracked events.
+
+eventName - Name of the custom event. (Mandatory)
+
+eventData - Any JSON Object.
+
+The following example shows the implementation of the 'onClick' event listener to any element.
+```js
+tracker.trackCustomEvent(eventName: string, eventData?: any);
+
+let eventName = "custom_event_name";
+let eventData = {"tagKey1" : "tagValue1", "tagKey2" : 100, "tagKey3" : true};
+tracker.trackCustomEvent(eventName, eventData);
+```
+
+## Setting / Clear Custom tags to report your application specific data.
+Use setCustomTags() API to set all kinds of tags (key value pairs). This API provides 1 argument to describe the tags.
+
+data - Any JSON Object.
+
+The following example shows the implementation of the 'onClick' event listener to any element.
+
+```js
+tracker.setCustomTags(customTagsToSet: any);
+
+let customTagsToSet = {"tagKey1" : "tagValue1", "tagKey2" : 100, "tagKey3" : true};
+tracker.setCustomTags(customTagsToSet);
+```
+
+Use clearCustomTags() API to remove that are set prior. This API provides 1 argument to describe an array of tag keys to be removed.
+
+keys - Array of strings representing tag keys.
+
+The following example shows the implementation of the 'onClick' event listener to any element.
+```js
+tracker.clearCustomTags(tagKeys: string[]);
+
+let customTagKeysToClear = ['tagKey2', 'tagKey3'];
+tracker.clearCustomTags(customTagKeysToClear);
+```
+
+Use clearAllCustomTags() API to remove all the custom tags that are set prior.
+
+The following example shows the implementation of the 'onClick' event listener to any element.
+```js
+tracker.clearAllCustomTags();
+```
