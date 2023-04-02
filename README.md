@@ -2,25 +2,25 @@
 ## Application Analytics for Conviva React Native Sensor
 Use Application Analytics to autocollect events, track application specific events and state changes, and track users anonymously. Internally it is built on top of the Native [Android](https://github.com/Conviva/conviva-android-appanalytics) and [iOS](https://github.com/Conviva/conviva-ios-appanalytics) Sensors
 
-### Initialization
+## Installation
 
-#### Install via npm:
+### Install via npm:
 ```js
 npm install @convivainc/conviva-react-native-appanalytics --save
 npx pod-install
 ```
-#### Install the Android React Native wrapper via Maven:
+### Install the Android React Native wrapper via Maven:
 ```
 dependencies {
     ...
     implementation 'com.conviva.sdk:conviva-react-native-tracker:<version>'
 }
 ```
-#### Install the iOS React Native wrapper via Cocoapods:
+### Install the iOS React Native wrapper via Cocoapods:
 ```
 pod 'RNConvivaAppAnalytics', 'version'
 ```
-#### Initialize the tracker
+## Initialize the tracker
 ```js
 import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
 
@@ -35,7 +35,8 @@ const tracker = createTracker(
 
 <strong>appName</strong> - a string value used to distinguish your applications. Simple values that are unique across all of your integrated platforms work best here.
 
-#### Set the user id (viewer id)
+
+## Set the user id (viewer id)
 ```js
 tracker.setSubjectData({userId?: string});
 
@@ -43,7 +44,7 @@ let viewerId = "testuserid@test.com"
 tracker.setSubjectData({userId: viewerId});
 ```
 
-#### Report PageView Events for tracking in-app page navigations.
+## Report PageView Events for tracking in-app page navigations.
 ```js
 tracker.trackPageViewEvent({pageUrl: string, pageTitle?: string, referrer?: string});
 
@@ -53,7 +54,7 @@ let pageViewEvent = {'pageUrl' : 'https://allpopulated.com',
 tracker.trackPageViewEvent(pageViewEvent);
 ```
 
-#### Custom event tracking to track your application specific events and state changes
+## Custom event tracking to track your application specific events and state changes
 Use trackCustomEvent() API to track all kinds of events. This API provides 2 fields to describe the tracked events.
 
 eventName - Name of the custom event. (Mandatory)
