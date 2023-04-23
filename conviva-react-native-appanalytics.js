@@ -677,8 +677,8 @@ function initValidate(init) {
     if (typeof init.appName !== 'string' || !init.appName || init.appName === "") {
         return Promise.reject(new Error(logMessages.appName));
     }
-    if (!Object.prototype.hasOwnProperty.call(init, 'networkConfig')
-        || !isValidNetworkConf(init.networkConfig)) {
+    if (Object.prototype.hasOwnProperty.call(init, 'networkConfig')
+        && !isValidNetworkConf(init.networkConfig)) {
         return Promise.reject(new Error(logMessages.network));
     }
     if (Object.prototype.hasOwnProperty.call(init, 'trackerConfig')
@@ -1857,4 +1857,4 @@ function removeAllTrackers() {
 }
 
 export { createTracker, getWebViewCallback, removeAllTrackers, removeTracker };
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=conviva-react-native-appanalytics.js.map

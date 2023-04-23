@@ -1,6 +1,7 @@
 # conviva-react-native-appanalytics
 ## Application Analytics for Conviva React Native Sensor
-Use Application Analytics to autocollect events, track application specific events and state changes, and track users anonymously. Internally it is built on top of the Native [Android](https://github.com/Conviva/conviva-android-appanalytics) and [iOS](https://github.com/Conviva/conviva-ios-appanalytics) Sensors
+Use Application Analytics to autocollect events, track application specific events and state changes, and track users anonymously. Please refer to [Android](https://github.com/Conviva/conviva-react-native-appanalytics-android-bridge) and [iOS](https://github.com/Conviva/conviva-react-native-appanalytics-ios-bridge) Bridge Sensors for more details.
+They are internally built on top of the [Android](https://github.com/Conviva/conviva-android-appanalytics) and [iOS](https://github.com/Conviva/conviva-ios-appanalytics) Native Sensors.
 
 ## Installation
 
@@ -9,16 +10,19 @@ Use Application Analytics to autocollect events, track application specific even
 npm install @convivainc/conviva-react-native-appanalytics --save
 npx pod-install
 ```
-### Install the Android React Native wrapper via Maven:
+### Install the Android React Native Bridge via Maven:
+Add below mentioned line in gradle file(supported from 0.1.0 onwards):
 ```
 dependencies {
     ...
     implementation 'com.conviva.sdk:conviva-react-native-tracker:<version>'
+    implementation 'com.conviva.sdk:conviva-android-tracker:<version>'
 }
 ```
-### Install the iOS React Native wrapper via Cocoapods:
+### Install the iOS React Native Bridge via Cocoapods:
+Add below mentioned line in pod file(supported from 0.1.0 onwards):
 ```
-pod 'RNConvivaAppAnalytics', 'version'
+pod 'RNConvivaAppAnalytics', '<version>'
 ```
 ## Initialize the tracker
 ```js
