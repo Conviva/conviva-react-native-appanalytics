@@ -10,6 +10,15 @@ npm install @convivainc/conviva-react-native-appanalytics --save
 npx pod-install
 ```
 
+## Android Gradle dependency
+Add the following line to app's build.gradle file along with the dependencies:
+```
+dependencies {
+    ...
+    implementation 'com.conviva.sdk:conviva-android-tracker:<version>'
+}
+```
+
 ## Initialize the tracker
 ```js
 import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
