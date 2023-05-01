@@ -29,6 +29,8 @@
 
 @interface RNConfigUtils : NSObject
 
++ (CATTrackerConfiguration *) mkDefaultTrackerConfig;
+
 + (CATTrackerConfiguration *) mkTrackerConfig:(NSDictionary *) trackerConfig;
 
 + (CATSessionConfiguration *) mkSessionConfig:(NSDictionary *) sessionConfig;

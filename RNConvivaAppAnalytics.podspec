@@ -20,5 +20,5 @@ Pod::Spec.new do |s|
   s.requires_arc = true
 
   s.dependency "React-Core"
-  s.dependency "ConvivaAppAnalytics", "~> 0.2.10"
+  s.dependency "ConvivaAppAnalytics", ">= 0.2.12"
 end

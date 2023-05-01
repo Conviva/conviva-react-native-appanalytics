@@ -37,6 +37,14 @@
 
 @implementation RNConfigUtils
 
++ (CATTrackerConfiguration *) mkDefaultTrackerConfig {
+    
+    CATTrackerConfiguration *trackerConfiguration = [CATTrackerConfiguration new];
+    trackerConfiguration.trackerVersionSuffix = kRNTrackerVersion;
+    
+    return trackerConfiguration;
+}
+
 + (CATTrackerConfiguration *) mkTrackerConfig:(NSDictionary *) trackerConfig {
     CATTrackerConfiguration *trackerConfiguration = [CATTrackerConfiguration new];
     trackerConfiguration.trackerVersionSuffix = kRNTrackerVersion;

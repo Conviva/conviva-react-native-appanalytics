@@ -61,17 +61,32 @@ RCT_EXPORT_METHOD(createTracker:
     NSString *customerKey = [argmap objectForKey:@"customerKey"];
     NSDictionary *networkConfig =[argmap objectForKey:@"networkConfig"];
 
-    // NetworkConfiguration
-    NSString *method = [networkConfig rncat_stringForKey:@"method" defaultValue:nil];
-    CATHttpMethod httpMethod = [@"get" isEqualToString:method] ? CATHttpMethodGet : CATHttpMethodPost;
-    CATNetworkConfiguration *networkConfiguration = [[CATNetworkConfiguration alloc] initWithEndpoint:networkConfig[@"endpoint"] method:httpMethod];
-    NSString *customPostPath = [networkConfig rncat_stringForKey:@"customPostPath" defaultValue:nil];
-    if (customPostPath != nil) {
-        networkConfiguration.customPostPath = customPostPath;
-    }
-    NSObject *requestHeaders = [networkConfig objectForKey:@"requestHeaders"];
-    if (requestHeaders != nil && [requestHeaders isKindOfClass:NSDictionary.class]) {
-        networkConfiguration.requestHeaders = (NSDictionary *)requestHeaders;
+    CATNetworkConfiguration *networkConfiguration = nil;
+    if(nil != networkConfig){
+        
+        // NetworkConfiguration
+        NSString *method = [networkConfig rncat_stringForKey:@"method" defaultValue:nil];
+        CATHttpMethod httpMethod = CATHttpMethodPost;
+        
+        if(0 < [method length]){
+            httpMethod = [@"get" isEqualToString:method] ? CATHttpMethodGet : CATHttpMethodPost;
+        }
+        
+        NSString *endpoint = networkConfig[@"endpoint"];
+        
+        if(0 < [endpoint length]) {
+            networkConfiguration = [[CATNetworkConfiguration alloc] initWithEndpoint:networkConfig[@"endpoint"] method:httpMethod];
+        }
+        
+        NSString *customPostPath = [networkConfig rncat_stringForKey:@"customPostPath" defaultValue:nil];
+        if (0 < [customPostPath length]) {
+            networkConfiguration.customPostPath = customPostPath;
+        }
+        
+        NSObject *requestHeaders = [networkConfig objectForKey:@"requestHeaders"];
+        if (requestHeaders != nil && [requestHeaders isKindOfClass:NSDictionary.class]) {
+            networkConfiguration.requestHeaders = (NSDictionary *)requestHeaders;
+        }
     }
 
     // Configurations
@@ -81,6 +96,10 @@ RCT_EXPORT_METHOD(createTracker:
     NSObject *trackerArg = [argmap objectForKey:@"trackerConfig"];
     if (trackerArg != nil && [trackerArg isKindOfClass:NSDictionary.class]) {
         CATTrackerConfiguration *trackerConfiguration = [RNConfigUtils mkTrackerConfig:(NSDictionary *)trackerArg];
+        [controllers addObject:trackerConfiguration];
+    }
+    else{
+        CATTrackerConfiguration *trackerConfiguration = [RNConfigUtils mkDefaultTrackerConfig];
         [controllers addObject:trackerConfiguration];
     }
 
@@ -118,10 +137,20 @@ RCT_EXPORT_METHOD(createTracker:
         CATGlobalContextsConfiguration *gcConfiguration = [RNConfigUtils mkGCConfig:(NSArray *)gcArg];
         [controllers addObject:gcConfiguration];
     }
-
-    id<CATTrackerController> tracker = [CATAppAnalytics createTrackerWithNamespace:trackerNs customerKey:customerKey network:networkConfiguration configurations:controllers];
-    tracker.appId = appName;
-
+    
+    id<CATTrackerController> tracker = nil;
+    if(nil != networkConfiguration){
+        tracker = [CATAppAnalytics createTrackerWithCustomerKey:customerKey
+                                                        appName:appName
+                                                        network:networkConfiguration
+                                                 configurations:controllers];
+    }
+    else{
+        tracker = [CATAppAnalytics createTrackerWithCustomerKey:customerKey
+                                                        appName:appName
+                                                 configurations:controllers];
+    }
+    
     if (tracker) {
         resolve(@YES);
     } else {
