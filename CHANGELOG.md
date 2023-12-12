@@ -1,7 +1,7 @@
 
 # Changelog
 ## 0.1.3 (12/DEC/2023)
-* Supports the Auto Detection of User Click of Button, TouchableHighlight, TouchableOpacity, TouchableWithoutFeedback and TouchableNativeFeedback Components<br>
+* Supports the Auto Detection of "buttonText" style for the User Click of Button, TouchableHighlight, TouchableOpacity, TouchableWithoutFeedback and TouchableNativeFeedback Components<br>
 *This feature needs the Android App SDK version of [0.8.0](https://github.com/Conviva/conviva-android-appanalytics)*
 
 ## 0.1.2 (01/MAY/2023)
