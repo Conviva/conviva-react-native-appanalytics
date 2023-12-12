@@ -2,6 +2,7 @@ package com.conviva.react.apptracker.util;
 
 import androidx.annotation.NonNull;
 
+import com.conviva.apptracker.event.ButtonClick;
 import com.conviva.apptracker.event.ConsentGranted;
 import com.conviva.apptracker.event.ConsentWithdrawn;
 import com.conviva.apptracker.event.DeepLinkReceived;
@@ -334,6 +335,12 @@ public class EventUtil {
             event.titleLocKey(argmap.getString("titleLocKey"));
         }
 
+        return event;
+    }
+
+    public static ButtonClick createButtonClickEvent(ReadableMap argmap) {
+        ButtonClick event = ButtonClick.buildClickEvent(argmap.toHashMap());
+        Objects.requireNonNull(event, "atleast one attribute should be available");
         return event;
     }
 }

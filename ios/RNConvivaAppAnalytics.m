@@ -45,7 +45,7 @@
 #import <ConvivaAppAnalytics/CATEcommerce.h>
 #import <ConvivaAppAnalytics/CATDeepLinkReceived.h>
 #import <ConvivaAppAnalytics/CATMessageNotification.h>
-
+#import <Foundation/NSObject.h>
 
 @implementation RNConvivaTracker
 
@@ -242,6 +242,17 @@ RCT_EXPORT_METHOD(trackScreenViewEvent:
     id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
 
     if (trackerController != nil) {
+        
+        BOOL trackScreenView = NO;
+        if([(NSObject*)trackerController respondsToSelector:@selector(screenViewAutotracking)]) {
+            trackScreenView = [(NSObject*)trackerController performSelector:@selector(screenViewAutotracking)];
+        }
+        
+        if(!trackScreenView) {
+            resolve(@YES);
+            return;
+        }
+
         NSDictionary *argmap = [details objectForKey:@"eventData"];
         NSArray<NSDictionary *> *contexts = [details objectForKey:@"contexts"];
 
@@ -1046,6 +1057,63 @@ RCT_EXPORT_METHOD(getForegroundIndex:
 
 - (nullable id<CATTrackerController>)trackerByNamespace:(NSString *)namespace {
     return [namespace isEqual:[NSNull null]] ? [CATAppAnalytics defaultTracker] : [CATAppAnalytics trackerByNamespace:namespace];
+}
+
+RCT_EXPORT_METHOD(trackClickEvent:
+                  (NSDictionary *)details
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    
+    NSString *namespace = [details objectForKey:@"tracker"];
+
+    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+
+    if (trackerController != nil) {
+       
+        NSDictionary *eventData = [details objectForKey:@"eventData"];
+        
+        if(nil != eventData && 0 < eventData.count){
+            
+            NSMutableDictionary *data = [NSMutableDictionary new];
+            
+            NSString *elementType = eventData[@"elementType"] ?: @"";
+            if(0 < elementType.length){
+                data[@"elementType"] = elementType;
+            }
+            
+            NSString *elementId = eventData[@"elementId"] ?: @"";
+            if(0 < elementId.length){
+                data[@"elementId"] = elementId;
+            }
+            
+            NSString *elementName = eventData[@"elementName"] ?: @"";
+            if(0 < elementName.length){
+                data[@"elementName"] = elementName;
+            }
+            
+            NSString *elementClasses = eventData[@"elementClasses"] ?: @"";
+            if(0 < elementClasses.length){
+                data[@"elementClasses"] = elementClasses;
+            }
+            
+            NSString *elementText = eventData[@"elementText"]  ?: @"";
+            if(0 < elementText.length){
+                data[@"elementText"] = elementText;
+            }
+            
+            NSString *elementValue = eventData[@"elementValue"] ?: @"";
+            if(0 < elementValue.length){
+                data[@"elementValue"] = elementValue;
+            }
+            
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"kCATNotificationButtonClick" object:nil userInfo:data];
+        }
+        
+        resolve(@(YES));
+    } else {
+        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+        reject(@"ERROR", @"tracker with given namespace not found", error);
+    }
 }
 
 @end

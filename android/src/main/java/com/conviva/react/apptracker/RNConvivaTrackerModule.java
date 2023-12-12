@@ -11,6 +11,7 @@ import com.conviva.apptracker.configuration.SessionConfiguration;
 import com.conviva.apptracker.configuration.SubjectConfiguration;
 import com.conviva.apptracker.configuration.TrackerConfiguration;
 import com.conviva.apptracker.controller.TrackerController;
+import com.conviva.apptracker.event.ButtonClick;
 import com.conviva.apptracker.event.ConsentGranted;
 import com.conviva.apptracker.event.ConsentWithdrawn;
 import com.conviva.apptracker.event.DeepLinkReceived;
@@ -190,7 +191,8 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void removeAllTrackers(Promise promise) {
         try {
-            ConvivaAppAnalytics.removeAllTrackers();
+            // commented out deprecated methods
+            // ConvivaAppAnalytics.removeAllTrackers();
             promise.resolve(true);
 
         } catch (Throwable t) {
@@ -488,14 +490,32 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void removeGlobalContexts(ReadableMap details, Promise promise) {
+    public void trackClickEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            String tag = details.getString("removeTag");
-
+            ReadableMap eventMap = details.getMap("eventData");
             TrackerController trackerController = getTracker(namespace);
 
-            trackerController.getGlobalContexts().remove(tag);
+            ButtonClick event = EventUtil.createButtonClickEvent(eventMap);
+            trackerController.track(event);
+
+            promise.resolve(true);
+
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void removeGlobalContexts(ReadableMap details, Promise promise) {
+        try {
+            // commented out deprecated methods            
+            // String namespace = details.getString("tracker");
+            // String tag = details.getString("removeTag");
+
+            // TrackerController trackerController = getTracker(namespace);
+
+            // trackerController.getGlobalContexts().remove(tag);
             promise.resolve(true);
 
         } catch (Throwable t) {
@@ -506,22 +526,23 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void addGlobalContexts(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            ReadableMap gcArg = details.getMap("addGlobalContext");
+            // commented out deprecated methods   
+            // String namespace = details.getString("tracker");
+            // ReadableMap gcArg = details.getMap("addGlobalContext");
 
-            String tag = gcArg.getString("tag");
-            ReadableArray globalContexts = gcArg.getArray("globalContexts");
+            // String tag = gcArg.getString("tag");
+            // ReadableArray globalContexts = gcArg.getArray("globalContexts");
 
-            List<SelfDescribingJson> staticContexts = new ArrayList<>();
-            for (int i = 0; i < globalContexts.size(); i++) {
-                SelfDescribingJson gContext = EventUtil.createSelfDescribingJson(globalContexts.getMap(i));
-                staticContexts.add(gContext);
-            }
-            GlobalContext gcStatic = new GlobalContext(staticContexts);
+            // List<SelfDescribingJson> staticContexts = new ArrayList<>();
+            // for (int i = 0; i < globalContexts.size(); i++) {
+            //     SelfDescribingJson gContext = EventUtil.createSelfDescribingJson(globalContexts.getMap(i));
+            //     staticContexts.add(gContext);
+            // }
+            // GlobalContext gcStatic = new GlobalContext(staticContexts);
 
-            TrackerController trackerController = getTracker(namespace);
+            // TrackerController trackerController = getTracker(namespace);
 
-            trackerController.getGlobalContexts().add(tag, gcStatic);
+            // trackerController.getGlobalContexts().add(tag, gcStatic);
             promise.resolve(true);
 
         } catch (Throwable t) {
@@ -722,11 +743,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getSessionUserId(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            TrackerController trackerController = getTracker(namespace);
+            // commented out deprecated methods
+            // String namespace = details.getString("tracker");
+            // TrackerController trackerController = getTracker(namespace);
 
-            String suid = trackerController.getSession().getUserId();
-            promise.resolve(suid);
+            // String suid = trackerController.getSession().getUserId();
+            // promise.resolve(suid);
+            promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
         }
@@ -735,11 +758,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getSessionId(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            TrackerController trackerController = getTracker(namespace);
+            // commented out deprecated methods
+            // String namespace = details.getString("tracker");
+            // TrackerController trackerController = getTracker(namespace);
 
-            String sid = trackerController.getSession().getSessionId();
-            promise.resolve(sid);
+            // String sid = trackerController.getSession().getSessionId();
+            // promise.resolve(sid);
+            promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
         }
@@ -748,11 +773,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getSessionIndex(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            TrackerController trackerController = getTracker(namespace);
+            // commented out deprecated methods
+            // String namespace = details.getString("tracker");
+            // TrackerController trackerController = getTracker(namespace);
 
-            int sidx = trackerController.getSession().getSessionIndex();
-            promise.resolve(sidx);
+            // int sidx = trackerController.getSession().getSessionIndex();
+            // promise.resolve(sidx);
+            promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
         }
@@ -761,11 +788,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getIsInBackground(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            TrackerController trackerController = getTracker(namespace);
+            // commented out deprecated methods
+            // String namespace = details.getString("tracker");
+            // TrackerController trackerController = getTracker(namespace);
 
-            boolean isInBg = trackerController.getSession().isInBackground();
-            promise.resolve(isInBg);
+            // boolean isInBg = trackerController.getSession().isInBackground();
+            // promise.resolve(isInBg);
+            promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
         }
@@ -774,11 +803,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getBackgroundIndex(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            TrackerController trackerController = getTracker(namespace);
+            // commented out deprecated methods
+            // String namespace = details.getString("tracker");
+            // TrackerController trackerController = getTracker(namespace);
 
-            int bgIdx = trackerController.getSession().getBackgroundIndex();
-            promise.resolve(bgIdx);
+            // int bgIdx = trackerController.getSession().getBackgroundIndex();
+            // promise.resolve(bgIdx);
+            promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
         }
@@ -787,11 +818,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getForegroundIndex(ReadableMap details, Promise promise) {
         try {
-            String namespace = details.getString("tracker");
-            TrackerController trackerController = getTracker(namespace);
+            // commented out deprecated methods
+            // String namespace = details.getString("tracker");
+            // TrackerController trackerController = getTracker(namespace);
 
-            int fgIdx = trackerController.getSession().getForegroundIndex();
-            promise.resolve(fgIdx);
+            // int fgIdx = trackerController.getSession().getForegroundIndex();
+            // promise.resolve(fgIdx);
+            promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
         }

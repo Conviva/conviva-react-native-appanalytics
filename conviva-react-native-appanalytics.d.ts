@@ -1,3 +1,5 @@
+import * as react from 'react';
+
 /**
  * HttpMethod type
  */
@@ -800,6 +802,12 @@ type ReactNativeTracker = {
      * @returns {Promise<number | undefined>}
      */
     readonly getForegroundIndex: () => Promise<number | undefined>;
+    /**
+    * Tracks a click event
+    *
+    * @param eventData - The user click event properties
+    */
+    readonly trackClickEvent: (eventData: any) => Promise<void>;
 };
 
 /**
@@ -839,4 +847,8 @@ declare function removeTracker(trackerNamespace: string): Promise<boolean>;
  */
 declare function removeAllTrackers(): Promise<boolean>;
 
-export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, createTracker, getWebViewCallback, removeAllTrackers, removeTracker };
+declare const _default: {
+    convivaTouchableAutoTrack: (TouchableComponent: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
+};
+
+export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, createTracker, _default as default, getWebViewCallback, removeAllTrackers, removeTracker };

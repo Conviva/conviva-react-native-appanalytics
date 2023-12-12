@@ -1,4 +1,7 @@
 import { NativeModules } from 'react-native';
+import * as React from 'react';
+import hoistNonReactStatic from 'hoist-non-react-statics';
+import 'lodash';
 
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
@@ -124,6 +127,7 @@ const logMessages = {
     deepLinkReq: 'deepLinkReceived event requires the url parameter to be set',
     messageNotificationReq: 'messageNotification event requires title, body, and trigger parameters to be set',
     trackCustomEvent: 'trackCustomEvent event requires name and data',
+    trackClickEvent: 'click event requires atleast one attribute',
     // custom tags contexts
     setCustomTags: 'setCustomTags requires tags',
     clearCustomTags: 'clearCustomTags requires tag keys',
@@ -1025,6 +1029,22 @@ function clearAllCustomTags$1(namespace, contexts = []) {
         throw new Error(`${logMessages.clearAllCustomTags} ${error.message}`);
     });
 }
+/**
+ * Track user click event
+ *
+ * @param namespace {string} - the tracker namespace
+ * @param eventData {any}- the user click data
+ * @returns {Promise}
+ */
+function trackClickEvent$1(namespace, eventData) {
+    return RNConvivaTracker.trackClickEvent({
+        tracker: namespace,
+        eventData: eventData
+    })
+        .catch((error) => {
+        throw new Error(`${logMessages.trackClickEvent} ${error.message}`);
+    });
+}
 
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
@@ -1656,6 +1676,17 @@ function getForegroundIndex(namespace) {
             .resolve(RNConvivaTracker.getForegroundIndex({ tracker: namespace }));
     };
 }
+/**
+ * Returns a function to track click event.
+ *
+ * @param namespace {string} - The tracker namespace
+ * @returns - A function to track click event
+ */
+function trackClickEvent(namespace) {
+    return function (eventData) {
+        return trackClickEvent$1(namespace, eventData);
+    };
+}
 
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
@@ -1727,6 +1758,122 @@ function getWebViewCallback() {
     };
 }
 
+const logError = (message, error, quiet = false) => {
+    const logger = quiet ? console.log : console.warn;
+    if (error instanceof Error) {
+        // KLUDGE: These properties don't show up if you `console.warn` the error object directly.
+        logger(message, {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+        });
+    }
+    else {
+        logger(message, {
+            message: String(error),
+        });
+    }
+};
+const handleError = (fn, name = null, quiet = false) => {
+    return (...args) => {
+        try {
+            return fn(...args);
+        }
+        catch (e) {
+            logError(name ? `Conviva: ${name} failed with an error.` : 'Conviva SDK encountered an error while tracking.', e, quiet);
+        }
+    };
+};
+
+const getComponentDisplayName = WrappedComponent => {
+    return WrappedComponent.displayName || WrappedComponent.name || 'Component';
+};
+
+const getCompTargetText = (comp) => {
+    return getTargetText(getReactInternalFiber(comp));
+};
+const getReactInternalFiber = (comp) => {
+    return comp._reactInternals || comp._reactInternalFiber || comp._fiber || comp._internalFiberInstanceHandleDEV;
+};
+const getTargetText = fiberNode => {
+    if (fiberNode.type === 'RCTText') {
+        return fiberNode.memoizedProps.children;
+    }
+    // In some cases, target text may not be within an 'RCTText' component. This has only been
+    // observed in unit tests with Enzyme, but may still be a possibility in real RN apps.
+    if (fiberNode.memoizedProps &&
+        typeof fiberNode.memoizedProps.children === 'string') {
+        return fiberNode.memoizedProps.children;
+    }
+    if (fiberNode.child === null) {
+        return '';
+    }
+    const children = [];
+    let currChild = fiberNode.child;
+    while (currChild) {
+        children.push(currChild);
+        currChild = currChild.sibling;
+    }
+    let targetText = '';
+    children.forEach(child => {
+        targetText = (targetText + ' ' + getTargetText(child)).trim();
+    });
+    return targetText;
+};
+
+var __rest = (undefined) || function (s, e) {
+    var t = {};
+    for (var p in s)
+        if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+            t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, q = Object.getOwnPropertySymbols(s); i < q.length; i++) {
+            if (e.indexOf(q[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, q[i]))
+                t[p[i]] = s[q[i]];
+        }
+    return t;
+};
+const convivaAutotrackPress = trackHandler => (_eventType, componentThis, _event) => {
+    if (componentThis) {
+        let data = { "elementId": componentThis.id, "elementClasses": componentThis.displayName, "elementType": componentThis.elementType, "elementText": getCompTargetText(componentThis) };
+        // console.log("trackHandler data",data);
+        trackHandler(data);
+    }
+};
+const convivaTouchableAutoTrack = (track) => TouchableComponent => {
+    class ConvivaTouchableAutoTrack extends React.Component {
+        render() {
+            const _a = this.props, { forwardedRef, onPress, onLongPress } = _a, rest = __rest(_a, ["forwardedRef", "onPress", "onLongPress"]);
+            return (React.createElement(TouchableComponent, Object.assign({ ref: forwardedRef, onPress: e => {
+                    handleError(convivaAutotrackPress(track))('touchableHandlePress', this, e);
+                    onPress && onPress(e);
+                }, onLongPress: e => {
+                    handleError(convivaAutotrackPress(track))('touchableHandleLongPress', this, e);
+                    onLongPress && onLongPress(e);
+                } }, rest), this.props.children));
+        }
+    }
+    ConvivaTouchableAutoTrack.displayName = `convivaTouchableAutoTrack(${getComponentDisplayName(TouchableComponent)})`;
+    // console.log("ConvivaTouchableAutoTrack.displayName",ConvivaTouchableAutoTrack.displayName);
+    const forwardRefHoc = React.forwardRef((props, ref) => {
+        return React.createElement(ConvivaTouchableAutoTrack, Object.assign({}, props, { forwardedRef: ref }));
+    });
+    hoistNonReactStatic(forwardRefHoc, TouchableComponent);
+    return forwardRefHoc;
+};
+
+class DisplayNameTest {
+    render() { }
+}
+let warningGiven = false;
+const checkDisplayNamePlugin = () => {
+    // @ts-ignore
+    if (!DisplayNameTest.displayName && !warningGiven) {
+        console.warn('Conviva: Display names are not available');
+        warningGiven = true;
+    }
+};
+
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
  *
@@ -1772,6 +1919,7 @@ controllerConfig = {}) {
     const trackDeepLinkReceivedEvent$1 = mkMethod(trackDeepLinkReceivedEvent(namespace));
     const trackMessageNotificationEvent$1 = mkMethod(trackMessageNotificationEvent(namespace));
     const trackCustomEvent$1 = mkMethod(trackCustomEvent(namespace));
+    const trackClickEvent$1 = mkMethod(trackClickEvent(namespace));
     // custom tags contexts
     const setCustomTags$1 = mkMethod(setCustomTags(namespace));
     const setCustomTagsWithCategory$1 = mkMethod(setCustomTagsWithCategory(namespace));
@@ -1834,6 +1982,7 @@ controllerConfig = {}) {
         getIsInBackground: getIsInBackground$1,
         getBackgroundIndex: getBackgroundIndex$1,
         getForegroundIndex: getForegroundIndex$1,
+        trackClickEvent: trackClickEvent$1,
     });
 }
 /**
@@ -1855,6 +2004,11 @@ function removeAllTrackers() {
     return removeAllTrackers$1()
         .catch((e) => errorHandler(e));
 }
+const autocaptureTrack = handleError((payload) => {
+    checkDisplayNamePlugin();
+    trackClickEvent('CAT')(payload).catch((e) => errorHandler(e));
+}, 'Event autocapture', true);
+var index = { convivaTouchableAutoTrack: convivaTouchableAutoTrack(autocaptureTrack) };
 
-export { createTracker, getWebViewCallback, removeAllTrackers, removeTracker };
+export { createTracker, index as default, getWebViewCallback, removeAllTrackers, removeTracker };
 //# sourceMappingURL=conviva-react-native-appanalytics.js.map
