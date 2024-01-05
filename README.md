@@ -53,6 +53,47 @@ let pageViewEvent = {'pageUrl' : 'https://allpopulated.com',
 tracker.trackPageViewEvent(pageViewEvent);
 ```
 
+## Auto detect ScreenView Events for tracking screen navigation.
+For React Navigation versions 5 and above, to autocapture screenviews, wrap withReactNavigationAutotrack(autocaptureNavigationTrack) around the NavigationContainer:
+
+```js
+
+import {
+  withReactNavigationAutotrack,
+  autocaptureNavigationTrack
+} from '@convivainc/conviva-react-native-appanalytics';
+
+
+const ConvivaNavigationContainer = 
+withReactNavigationAutotrack(autocaptureNavigationTrack)(NavigationContainer);
+
+
+<ConvivaNavigationContainer>
+    <Tab.Navigator>
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen}/> 
+    </Tab.Navigator>
+</ConvivaNavigationContainer>
+```
+
+For React Navigation versions below 5, wrap the AppContainer (the result of a call to React Navigation’s createAppContainer() method) with withReactNavigationAutotrack(autocaptureNavigationTrack)
+```js
+
+let AppNavigator = createStackNavigator(
+  {
+    Home: { screen: HomeScreen },
+    Settings: { screen: SettingsScreen }
+  },
+  {
+    initialRouteName: 'HomeScreen'
+  }
+)
+
+let App = withReactNavigationAutotrack(autocaptureNavigationTrack)(AppNavigator);
+
+```
+
+
 ## Custom event tracking to track your application specific events and state changes
 Use trackCustomEvent() API to track all kinds of events. This API provides 2 fields to describe the tracked events.
 

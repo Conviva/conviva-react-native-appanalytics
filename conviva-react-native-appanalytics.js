@@ -1,7 +1,8 @@
 import { NativeModules } from 'react-native';
 import * as React from 'react';
+import React__default from 'react';
 import hoistNonReactStatic from 'hoist-non-react-statics';
-import 'lodash';
+import * as _ from 'lodash';
 
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
@@ -765,7 +766,7 @@ function trackScreenViewEvent$1(namespace, argmap, contexts = []) {
         contexts: contexts
     }))
         .catch((error) => {
-        throw new Error(`${logMessages.trackScreenView} ${error.message}`);
+        throw new Error(`Conviva ${logMessages.trackScreenView} ${error.message}`);
     });
 }
 /**
@@ -1874,6 +1875,188 @@ const checkDisplayNamePlugin = () => {
     }
 };
 
+class NavigationUtil {
+    // :TODO: (jmtaber129): Add typing for this ref.
+    static convivaNavRef;
+    static setNavigationRef(ref) {
+        this.convivaNavRef = ref;
+    }
+    static getScreenPropsForCurrentRoute() {
+        let rootState = null;
+        if (this.convivaNavRef && this.convivaNavRef.state && this.convivaNavRef.state.nav) {
+            rootState = this.convivaNavRef.state.nav;
+        }
+        else if (this.convivaNavRef && this.convivaNavRef.getRootState) {
+            rootState = this.convivaNavRef.getRootState();
+        }
+        if (rootState == null) {
+            return null;
+        }
+        const routeProps = this.getActiveRouteProps(rootState);
+        if (routeProps) {
+            return routeProps;
+        }
+        return null;
+    }
+    static isHocEnabled() {
+        return !!this.convivaNavRef;
+    }
+    // :TODO: (jmtaber129): Add type for navigationState.
+    static getActiveRouteProps(navigationState) {
+        const paths = this.getActiveRouteNames(navigationState);
+        return {
+            screen_path: paths.join('::'),
+            screen_name: paths[paths.length - 1],
+        };
+    }
+    // Returns an array of route names, with the root name first, and the most nested name last.
+    static getActiveRouteNames(navigationState) {
+        const route = navigationState.routes[navigationState.index];
+        // Dive into nested navigators.
+        let paths;
+        if (route.routes) {
+            paths = this.getActiveRouteNames(route);
+        }
+        else if (route.state && route.state.routes) {
+            paths = this.getActiveRouteNames(route.state);
+        }
+        const routeName = route.routeName || route.name;
+        if (paths) {
+            return [routeName].concat(paths);
+        }
+        return [routeName];
+    }
+}
+
+const version = "0.22.6";
+
+const { Platform } = require('react-native');
+let reactNativeVersionString = null;
+if (Platform && Platform.constants && Platform.constants.reactNativeVersion) {
+    const { major, minor, patch } = Platform.constants.reactNativeVersion;
+    reactNativeVersionString = `${major}.${minor}.${patch}`;
+}
+const getMetadataProps = () => {
+    return {
+        source_version: version,
+        is_using_react_navigation_hoc: NavigationUtil.isHocEnabled(),
+        react_native_version: reactNativeVersionString,
+    };
+};
+
+const getContextualProps = () => {
+    return _.merge({}, getMetadataProps(), { name: NavigationUtil.getScreenPropsForCurrentRoute()?.screen_name
+        // , id:NavigationUtil.getScreenPropsForCurrentRoute()?.screen_path
+    });
+};
+
+// const EVENT_TYPE = 'react_navigation_screenview';
+// const INITIAL_ROUTE_TYPE = 'Conviva_Navigation/INITIAL';
+const withReactNavigationAutotrack = track => AppContainer => {
+    const wrapperObject = {};
+    const existingWrapper = wrapperObject.__convivaWrapper;
+    if (existingWrapper) {
+        return existingWrapper;
+    }
+    const captureOldNavigationStateChange = handleError((prev, next) => {
+        const { screen_path: prevScreenRoute } = NavigationUtil.getActiveRouteProps(prev);
+        const { screen_path: nextScreenRoute } = NavigationUtil.getActiveRouteProps(next);
+        if (prevScreenRoute !== nextScreenRoute) {
+            track({
+                ...getContextualProps(),
+            });
+        }
+    }, 'Navigation event capture', true);
+    class ConvivaNavigationWrapper extends React__default.Component {
+        constructor(props) {
+            super(props);
+            this.topLevelNavigator = null;
+            this.currentPath = null;
+        }
+        setRef(ref, value) {
+            if (typeof ref === 'function') {
+                ref(value);
+            }
+            else if (ref !== null) {
+                ref.current = value;
+            }
+        }
+        captureStateChange = handleError(state => {
+            const { screen_path: nextPath } = NavigationUtil.getActiveRouteProps(state);
+            if (nextPath !== this.currentPath) {
+                track({
+                    previousName: this.currentPath || "",
+                    ...getContextualProps()
+                });
+            }
+            this.currentPath = nextPath;
+        }, 'Navigation event capture', true);
+        captureOnReady = handleError(() => {
+            if (this.topLevelNavigator.getRootState) {
+                this.trackInitialRouteForState(this.topLevelNavigator.getRootState());
+                const { screen_path: currentPath } = NavigationUtil.getActiveRouteProps(this.topLevelNavigator.getRootState());
+                this.currentPath = currentPath;
+            }
+        }, 'Navigation event capture', true);
+        trackInitialRouteForState(_) {
+            // const { screen_path: initialPageviewPath } = NavigationUtil.getActiveRouteProps(navigationState);
+            track({
+                ...getContextualProps()
+            });
+        }
+        render() {
+            try {
+                return this._render();
+            }
+            catch (e) {
+                logError('Conviva: Failed to render React Navigation wrapper.', e);
+                const { forwardedRef, ...rest } = this.props;
+                return React__default.createElement(AppContainer, { ref: forwardedRef, ...rest });
+            }
+        }
+        _render() {
+            const { forwardedRef, onNavigationStateChange, onStateChange, onReady, ...rest } = this.props;
+            return React__default.createElement(AppContainer, {
+                ref: handleError((navigatorRef) => {
+                    this.setRef(forwardedRef, navigatorRef);
+                    NavigationUtil.setNavigationRef(navigatorRef);
+                    if (this.topLevelNavigator !== navigatorRef &&
+                        navigatorRef !== null) {
+                        this.topLevelNavigator = navigatorRef;
+                        if (this.topLevelNavigator.state) {
+                            this.trackInitialRouteForState(this.topLevelNavigator.state.nav);
+                        }
+                    }
+                }, 'Navigation event capture', true),
+                onReady: (...args) => {
+                    this.captureOnReady();
+                    if (typeof onReady === 'function') {
+                        onReady(...args);
+                    }
+                },
+                onStateChange: (...args) => {
+                    this.captureStateChange(...args);
+                    if (typeof onStateChange === 'function') {
+                        onStateChange(...args);
+                    }
+                },
+                onNavigationStateChange: (...args) => {
+                    captureOldNavigationStateChange(...args);
+                    if (typeof onNavigationStateChange === 'function') {
+                        onNavigationStateChange(...args);
+                    }
+                },
+                ...rest,
+            }, this.props.children);
+        }
+    }
+    ConvivaNavigationWrapper.displayName = `withReactNavigationAutotrack(${getComponentDisplayName(AppContainer)})`;
+    wrapperObject.__convivaWrapper = React__default.forwardRef((props, ref) => {
+        return React__default.createElement(ConvivaNavigationWrapper, { ...props, forwardedRef: ref });
+    });
+    return wrapperObject.__convivaWrapper;
+};
+
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
  *
@@ -2004,11 +2187,18 @@ function removeAllTrackers() {
     return removeAllTrackers$1()
         .catch((e) => errorHandler(e));
 }
+const autocaptureNavigationTrack = handleError((payload) => {
+    checkDisplayNamePlugin();
+    trackScreenViewEvent('CAT')(payload).catch((e) => errorHandler(e));
+}, 'Event autocapture', true);
 const autocaptureTrack = handleError((payload) => {
     checkDisplayNamePlugin();
     trackClickEvent('CAT')(payload).catch((e) => errorHandler(e));
 }, 'Event autocapture', true);
-var index = { convivaTouchableAutoTrack: convivaTouchableAutoTrack(autocaptureTrack) };
+var index = {
+    convivaTouchableAutoTrack: convivaTouchableAutoTrack(autocaptureTrack),
+    withReactNavigationAutotrack: withReactNavigationAutotrack(autocaptureNavigationTrack)
+};
 
-export { createTracker, index as default, getWebViewCallback, removeAllTrackers, removeTracker };
+export { autocaptureNavigationTrack, createTracker, index as default, getWebViewCallback, removeAllTrackers, removeTracker, withReactNavigationAutotrack };
 //# sourceMappingURL=conviva-react-native-appanalytics.js.map

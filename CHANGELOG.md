@@ -1,5 +1,9 @@
 
 # Changelog
+
+## 0.1.4 (05/JAN/2024)
+* Supports the Auto Detection of ScreenView navigation if the application uses the NavigationContainer(for react native version 5 and above) or AppContainer(for react native version below 5)
+
 ## 0.1.3 (12/DEC/2023)
 * Supports the Auto Detection of "buttonText" style for the User Click of Button, TouchableHighlight, TouchableOpacity, TouchableWithoutFeedback and TouchableNativeFeedback Components<br>
 *This feature needs the Android App SDK version of [0.8.0](https://github.com/Conviva/conviva-android-appanalytics)*

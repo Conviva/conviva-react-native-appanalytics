@@ -825,6 +825,8 @@ declare function getWebViewCallback(): (message: {
     };
 }) => void;
 
+declare function withReactNavigationAutotrack(track: any): (AppContainer: any) => React.ForwardRefExoticComponent<React.RefAttributes<any>>;
+
 /**
  * Creates a React Native Tracker object
  *
@@ -846,9 +848,11 @@ declare function removeTracker(trackerNamespace: string): Promise<boolean>;
  * @returns - A boolean promise
  */
 declare function removeAllTrackers(): Promise<boolean>;
+declare const autocaptureNavigationTrack: (...args: any[]) => any;
 
 declare const _default: {
     convivaTouchableAutoTrack: (TouchableComponent: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
+    withReactNavigationAutotrack: (AppContainer: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
 };
 
-export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, createTracker, _default as default, getWebViewCallback, removeAllTrackers, removeTracker };
+export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, createTracker, _default as default, getWebViewCallback, removeAllTrackers, removeTracker, withReactNavigationAutotrack };
