@@ -2,7 +2,8 @@
 # Changelog
 
 ## 0.1.4 (05/JAN/2024)
-* Supports the Auto Detection of ScreenView navigation if the application uses the NavigationContainer(for react native version 5 and above) or AppContainer(for react native version below 5)
+* Supports the Auto Detection of ScreenView navigation if the application uses the NavigationContainer(for react native version 5 and above) or AppContainer(for react native version below 5)<br>
+*Please refer to [ScreenView Auto-Detection](https://github.com/Conviva/conviva-react-native-appanalytics?tab=readme-ov-file#auto-detect-screenview-events-for-tracking-screen-navigation) for more details* 
 
 ## 0.1.3 (12/DEC/2023)
 * Supports the Auto Detection of "buttonText" style for the User Click of Button, TouchableHighlight, TouchableOpacity, TouchableWithoutFeedback and TouchableNativeFeedback Components<br>
