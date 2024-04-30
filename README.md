@@ -54,7 +54,7 @@ tracker.trackPageViewEvent(pageViewEvent);
 ```
 
 ## Auto detect button clicks.
-Auto detection of button clicks is supported for Button, TouchableHighlight, TouchableOpacity, TouchableWithoutFeedback and TouchableNativeFeedback Components. Add below plugin code to .bablerc or babel.config.js as below.
+Auto detection of button clicks is supported for **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components. Add below plugin code to .bablerc or babel.config.js as below.
 ```js
 "plugins": ["add-react-displayname",
       "./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js"
