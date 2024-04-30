@@ -60,7 +60,7 @@ Auto detection of button clicks is supported. Add below plugin code to .bablerc 
       "./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js"
      ]
 
-``
+```
 
 ## Auto detect ScreenView Events for tracking screen navigation.
 For React Navigation versions 5 and above, to autocapture screenviews, wrap withReactNavigationAutotrack(autocaptureNavigationTrack) around the NavigationContainer:
