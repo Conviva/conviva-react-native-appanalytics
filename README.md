@@ -10,12 +10,34 @@ npm install @convivainc/conviva-react-native-appanalytics --save
 npx pod-install
 ```
 
-## Android Gradle dependency
+## Android Native Sensor dependencies
 Add the following line to app's build.gradle file along with the dependencies:
 ```
 dependencies {
     ...
     implementation 'com.conviva.sdk:conviva-android-tracker:<version>'
+}
+```
+Android Plugin should be used for the auto collection of **Button Click** and **OkHttp/Retrofit/HTTPSUrlConnection/HTTPUrlConnection** **NetworkRequest Tracking** features. The following example shows how to include the plugin:
+```
+// in the root or project-level build.gradle
+dependencies {
+  ...
+  // For Android Gradle Plugin version 8.0 and above, use
+  classpath 'com.conviva.sdk:android-plugin:0.3.x'
+
+  // For Android Gradle Plugin version below 8.0, use
+  classpath 'com.conviva.sdk:android-plugin:0.2.x'
+  ...
+}
+
+// in the app, build.gradle at the end of plugins add the
+...
+apply plugin: 'com.conviva.sdk.android-plugin'
+
+// in the app, build.gradle.kts at the end of plugins add the
+plugins {
+    id 'com.conviva.sdk.android-plugin'
 }
 ```
 
@@ -110,7 +132,7 @@ eventName - Name of the custom event. (Mandatory)
 
 eventData - Any JSON Object.
 
-The following example shows the implementation of the 'onClick' event listener to any element.
+The following example shows the implementation of the application using these API's:
 ```js
 tracker.trackCustomEvent(eventName: string, eventData?: any);
 
@@ -124,7 +146,7 @@ Use setCustomTags() API to set all kinds of tags (key value pairs). This API pro
 
 data - Any JSON Object.
 
-The following example shows the implementation of the 'onClick' event listener to any element.
+The following example shows the implementation of the application using this API:
 
 ```js
 tracker.setCustomTags(customTagsToSet: any);
@@ -137,7 +159,7 @@ Use clearCustomTags() API to remove that are set prior. This API provides 1 argu
 
 keys - Array of strings representing tag keys.
 
-The following example shows the implementation of the 'onClick' event listener to any element.
+The following example shows the implementation of the application using this API:
 ```js
 tracker.clearCustomTags(tagKeys: string[]);
 
@@ -147,7 +169,22 @@ tracker.clearCustomTags(customTagKeysToClear);
 
 Use clearAllCustomTags() API to remove all the custom tags that are set prior.
 
-The following example shows the implementation of the 'onClick' event listener to any element.
+The following example shows the implementation of the application using this API:
 ```js
 tracker.clearAllCustomTags();
 ```
+
+<details>
+    <summary><b>Auto-collected Events</b></summary>
+    
+##### Conviva provides a rich set of application performance metrics with the help of autocollected app events, such as _screen_view_ , _button_click_, and _network_request_. 
+
+Event | Occurrence |
+------|------------ |
+network_request | after receiving the network request response ; auto collected from the Native Sensors|
+screen_view | when the screen is interacted on either first launch or relaunch ; auto collected from the Native Sensors + React Native Screens|
+application_error | when an error occurrs in the application ; auto collected from the Native Sensors|
+button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components|
+application_background | when the application is taken to the background ; auto collected from the Native Sensors|
+application_foreground | when the application is taken to the foreground ; auto collected from the Native Sensors|
+application_install | when the application is launched for the first time after it's installed. (It's not the exact installed time.) |
