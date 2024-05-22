@@ -67,12 +67,12 @@ tracker.setSubjectData({userId: viewerId});
 
 ## Report PageView Events for tracking in-app page navigations.
 ```js
-tracker.trackPageViewEvent({pageUrl: string, pageTitle?: string, referrer?: string});
+tracker.trackPageView({pageUrl: string, pageTitle?: string, referrer?: string});
 
 let pageViewEvent = {'pageUrl' : 'https://allpopulated.com',
       'pageTitle' : 'some title',
       'referrer' : 'http://refr.com'};
-tracker.trackPageViewEvent(pageViewEvent);
+tracker.trackPageView(pageViewEvent);
 ```
 
 ## Auto detect button clicks.
