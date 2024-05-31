@@ -192,7 +192,7 @@ Event | Occurrence |
 network_request | after receiving the network request response ; auto collected from the Native Sensors, Need android-plugin inclusion for Android|
 screen_view | when the screen is interacted on either first launch or relaunch ; auto collected from the Native Sensors + React Native Screens; Need add-react-displayname plugin and wrapping of Navigation Components |
 application_error | when an error occurrs in the application ; auto collected from the Native Sensors|
-button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components; Need babel transformation plugin|
+button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components; Need Conviva index.js from the node_modules folder|
 application_background | when the application is taken to the background ; auto collected from the Native Sensors|
 application_foreground | when the application is taken to the foreground ; auto collected from the Native Sensors|
 application_install | when the application is launched for the first time after it's installed. (It's not the exact installed time.) |
