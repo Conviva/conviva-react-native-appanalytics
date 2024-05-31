@@ -76,15 +76,22 @@ tracker.trackPageView(pageViewEvent);
 ```
 
 ## Auto detect button clicks.
-Auto detection of button clicks is supported for **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components. Add below plugin code to .bablerc or babel.config.js as below.
+Even though the React Native components can be natively mapped in Android and iOS, for the Auto detection of button clicks for **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components, needs explicit addition of babel transfomation. Add below plugin code in your application .babel.rc or babel.config.js file:
+
 ```js
-"plugins": ["add-react-displayname",
-      "./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js"
-     ]
+
+"plugins": ["./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js"]
 
 ```
 
 ## Auto detect ScreenView Events for tracking screen navigation.
+To support Conviva to Auto Detect the Screen Name part of the ScreenView Events, add below plugin code in your application .babel.rc or babel.config.js file:
+```js
+
+"plugins": ["add-react-displayname"]
+
+```
+
 For React Navigation versions 5 and above, to autocapture screenviews, wrap withReactNavigationAutotrack(autocaptureNavigationTrack) around the NavigationContainer:
 
 ```js
@@ -181,10 +188,10 @@ tracker.clearAllCustomTags();
 
 Event | Occurrence |
 ------|------------ |
-network_request | after receiving the network request response ; auto collected from the Native Sensors|
-screen_view | when the screen is interacted on either first launch or relaunch ; auto collected from the Native Sensors + React Native Screens|
+network_request | after receiving the network request response ; auto collected from the Native Sensors, Need android-plugin inclusion for Android|
+screen_view | when the screen is interacted on either first launch or relaunch ; auto collected from the Native Sensors + React Native Screens; Need add-react-displayname plugin and wrapping of Navigation Components |
 application_error | when an error occurrs in the application ; auto collected from the Native Sensors|
-button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components|
+button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components; Need babel transformation plugin|
 application_background | when the application is taken to the background ; auto collected from the Native Sensors|
 application_foreground | when the application is taken to the foreground ; auto collected from the Native Sensors|
 application_install | when the application is launched for the first time after it's installed. (It's not the exact installed time.) |
