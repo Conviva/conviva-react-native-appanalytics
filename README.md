@@ -133,6 +133,7 @@ let App = withReactNavigationAutotrack(autocaptureNavigationTrack)(AppNavigator)
 
 
 ## Custom event tracking to track your application specific events and state changes
+<strong>_*** Note: Supported only in Android right now ***_<br></strong><br>
 Use trackCustomEvent() API to track all kinds of events. This API provides 2 fields to describe the tracked events.
 
 eventName - Name of the custom event. (Mandatory)
