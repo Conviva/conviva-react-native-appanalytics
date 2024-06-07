@@ -637,10 +637,10 @@ RCT_EXPORT_METHOD(trackCustomEvent:
 
     if (trackerController != nil) {
         NSString *eventName = [details objectForKey:@"eventName"];
-        NSString *eventData = [details objectForKey:@"eventData"];
+        NSDictionary *eventData = [details objectForKey:@"eventData"];
 
         if(0 < eventName.length){
-            [trackerController trackCustomEvent:eventName data:eventData];
+            [trackerController trackCustomEvent:eventName eventData:eventData];
         }
         
         resolve(@YES);
@@ -1011,13 +1011,20 @@ RCT_EXPORT_METHOD(getIsInBackground:
                   (NSDictionary *)details
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
-    NSString *namespace = [details objectForKey:@"tracker"];
-    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+//    NSString *namespace = [details objectForKey:@"tracker"];
+//    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+//
+//    if (trackerController != nil) {
+//        BOOL isInBg = [trackerController.session isInBackground];
+//        resolve(@(isInBg));
+//    } else {
+//        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+//        reject(@"ERROR", @"tracker with given namespace not found", error);
+//    }
 
-    if (trackerController != nil) {
-        BOOL isInBg = [trackerController.session isInBackground];
-        resolve(@(isInBg));
-    } else {
+    @try {
+        resolve(@(YES));
+    } @catch (NSException *exception) {
         NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
         reject(@"ERROR", @"tracker with given namespace not found", error);
     }
@@ -1027,13 +1034,19 @@ RCT_EXPORT_METHOD(getBackgroundIndex:
                   (NSDictionary *)details
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
-    NSString *namespace = [details objectForKey:@"tracker"];
-    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
-
-    if (trackerController != nil) {
-        NSInteger bgIdx = [trackerController.session backgroundIndex];
-        resolve(@(bgIdx));
-    } else {
+//    NSString *namespace = [details objectForKey:@"tracker"];
+//    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+//
+//    if (trackerController != nil) {
+//        NSInteger bgIdx = [trackerController.session backgroundIndex];
+//        resolve(@(bgIdx));
+//    } else {
+//        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+//        reject(@"ERROR", @"tracker with given namespace not found", error);
+//    }
+    @try {
+        resolve(@(YES));
+    } @catch (NSException *exception) {
         NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
         reject(@"ERROR", @"tracker with given namespace not found", error);
     }
@@ -1043,13 +1056,19 @@ RCT_EXPORT_METHOD(getForegroundIndex:
                   (NSDictionary *)details
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
-    NSString *namespace = [details objectForKey:@"tracker"];
-    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
-
-    if (trackerController != nil) {
-        NSInteger fgIdx = [trackerController.session foregroundIndex];
-        resolve(@(fgIdx));
-    } else {
+//    NSString *namespace = [details objectForKey:@"tracker"];
+//    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+//
+//    if (trackerController != nil) {
+//        NSInteger fgIdx = [trackerController.session foregroundIndex];
+//        resolve(@(fgIdx));
+//    } else {
+//        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+//        reject(@"ERROR", @"tracker with given namespace not found", error);
+//    }
+    @try {
+        resolve(@(YES));
+    } @catch (NSException *exception) {
         NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
         reject(@"ERROR", @"tracker with given namespace not found", error);
     }

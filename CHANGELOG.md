@@ -1,6 +1,9 @@
 
 # Changelog
 
+## 0.1.5 (07/JUN/2024)
+- Supports trackCustomEvent with JSONObject argument for [iOS Bridge](https://github.com/Conviva/conviva-ios-appanalytics)
+
 ## 0.1.4 (05/JAN/2024)
 - Supports the Auto Detection of ScreenView navigation if the application uses the [NavigationContainer](https://reactnavigation.org/docs/5.x/hello-react-navigation)(for react native version 5 and above) or [AppNavigator](https://reactnavigation.org/docs/4.x/hello-react-navigation)(for react native version below 5)<br>
  *Note:Please refer to [ScreenView Auto-Detection](https://github.com/Conviva/conviva-react-native-appanalytics?tab=readme-ov-file#auto-detect-screenview-events-for-tracking-screen-navigation) for more details*

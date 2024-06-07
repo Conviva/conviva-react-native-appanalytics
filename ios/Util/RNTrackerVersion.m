@@ -22,6 +22,6 @@
 
 @implementation RNTrackerVersion
 
-NSString * const kRNTrackerVersion = @"rn-0.1.4";
+NSString * const kRNTrackerVersion = @"rn-0.1.5";
 
 @end
