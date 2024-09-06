@@ -1074,6 +1074,44 @@ RCT_EXPORT_METHOD(getForegroundIndex:
     }
 }
 
+RCT_EXPORT_METHOD(getClientId: (RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+    
+    CATAppAnalytics *convivaAppAnalytics = [CATAppAnalytics sharedInstance];
+
+    if (convivaAppAnalytics != nil) {
+        NSString *clientId = [convivaAppAnalytics getClientId];
+        if (clientId != nil && clientId.length > 0) {
+            resolve(clientId);
+        }
+        else {
+            NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+            reject(@"ERROR", @"ClientId not found", error);
+        }
+    } else {
+        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+        reject(@"ERROR", @"CATAppAnalytics not found", error);
+    }
+}
+
+RCT_EXPORT_METHOD(setClientId:
+                  (NSDictionary *)details
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    CATAppAnalytics *convivaAppAnalytics = [CATAppAnalytics sharedInstance];
+
+    if (convivaAppAnalytics != nil) {
+        NSString *newClientId = [details rncat_stringForKey:@"clientId" defaultValue:nil];
+        BOOL isClientIdSet = NO;
+        if (newClientId != nil && newClientId.length > 0) {
+             isClientIdSet = [convivaAppAnalytics setClientId: newClientId];
+        }
+        resolve(@(isClientIdSet));
+    } else {
+        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+        reject(@"ERROR", @"tracker with given namespace not found", error);
+    }
+}
+
 - (nullable id<CATTrackerController>)trackerByNamespace:(NSString *)namespace {
     return [namespace isEqual:[NSNull null]] ? [CATAppAnalytics defaultTracker] : [CATAppAnalytics trackerByNamespace:namespace];
 }

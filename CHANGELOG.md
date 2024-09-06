@@ -1,6 +1,12 @@
 
 # Changelog
 
+## 0.2.0 (06/SEP/2024)
+- Introduces API for setting the conviva identifier
+- Internal enhancements for the Android Bridge
+*This feature needs the Android App SDK version of [0.9.5](https://github.com/Conviva/conviva-android-appanalytics)*
+*This feature needs the iOS App SDK version of [0.2.30](https://github.com/Conviva/conviva-ios-appanalytics)*
+
 ## 0.1.5 (07/JUN/2024)
 - Supports trackCustomEvent with JSONObject argument for [iOS Bridge](https://github.com/Conviva/conviva-ios-appanalytics)
 

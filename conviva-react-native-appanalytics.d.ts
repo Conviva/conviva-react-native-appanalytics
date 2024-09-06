@@ -848,6 +848,19 @@ declare function removeTracker(trackerNamespace: string): Promise<boolean>;
  * @returns - A boolean promise
  */
 declare function removeAllTrackers(): Promise<boolean>;
+/**
+ * Gets the cliend id
+ *
+ * @returns - A string promise
+ */
+declare function getClientId(): Promise<string>;
+/**
+ * Sets the cliend id
+ *
+ * @param clientId {string}
+ * @returns - A boolean promise
+ */
+declare function setClientId(clientId: string): Promise<boolean>;
 declare const autocaptureNavigationTrack: (...args: any[]) => any;
 
 declare const _default: {

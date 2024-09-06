@@ -22,7 +22,6 @@ import com.conviva.apptracker.event.ScreenView;
 import com.conviva.apptracker.event.SelfDescribing;
 import com.conviva.apptracker.event.Structured;
 import com.conviva.apptracker.event.Timing;
-import com.conviva.apptracker.globalcontexts.GlobalContext;
 import com.conviva.apptracker.internal.constants.TrackerConstants;
 import com.conviva.apptracker.network.CollectorCookieJar;
 import com.conviva.apptracker.network.HttpMethod;
@@ -89,8 +88,6 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
                 if (networkConfig.hasKey("customPostPath") && !networkConfig.isNull("customPostPath")) {
                     String customPostPath = networkConfig.getString("customPostPath");
                     networkConfiguration.customPostPath = customPostPath;
-                } else {
-                    networkConfiguration.customPostPath = (customerKey + "/" + TrackerConstants.CONVIVA_PROTOCOL_VERSION);
                 }
                 if (networkConfig.hasKey("requestHeaders") && !networkConfig.isNull("requestHeaders")) {
                     ReadableMap requestHeaders = networkConfig.getMap("requestHeaders");
@@ -180,8 +177,11 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
-
-            promise.resolve(ConvivaAppAnalytics.removeTracker(trackerController));
+            if (trackerController != null) {
+                promise.resolve(ConvivaAppAnalytics.removeTracker(trackerController));
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -201,22 +201,44 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void setClientId(ReadableMap argmap, Promise promise) {
+        try {
+            promise.resolve(ConvivaAppAnalytics.setClientId(this.reactContext, argmap.getString("clientId")));
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void getClientId(Promise promise) {
+        try {
+            promise.resolve(ConvivaAppAnalytics.getClientId(this.reactContext));
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
     public void trackSelfDescribingEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            SelfDescribingJson sdj = EventUtil.createSelfDescribingJson(argmap);
-            SelfDescribing event = new SelfDescribing(sdj);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                SelfDescribingJson sdj = EventUtil.createSelfDescribingJson(argmap);
+                SelfDescribing event = new SelfDescribing(sdj);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -227,18 +249,23 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackStructuredEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            Structured event = EventUtil.createStructuredEvent(argmap);
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                Structured event = EventUtil.createStructuredEvent(argmap);
+
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -249,18 +276,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackScreenViewEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            ScreenView event = EventUtil.createScreenViewEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                ScreenView event = EventUtil.createScreenViewEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -271,18 +302,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackPageView(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            PageView event = EventUtil.createPageViewEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                PageView event = EventUtil.createPageViewEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -293,18 +328,21 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackTimingEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            Timing event = EventUtil.createTimingEvent(argmap);
+                Timing event = EventUtil.createTimingEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -315,18 +353,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackConsentGrantedEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            ConsentGranted event = EventUtil.createConsentGrantedEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                ConsentGranted event = EventUtil.createConsentGrantedEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -337,18 +379,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackConsentWithdrawnEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            ConsentWithdrawn event = EventUtil.createConsentWithdrawnEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                ConsentWithdrawn event = EventUtil.createConsentWithdrawnEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -359,18 +405,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackEcommerceTransactionEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            EcommerceTransaction event = EventUtil.createEcommerceTransactionEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                EcommerceTransaction event = EventUtil.createEcommerceTransactionEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -381,18 +431,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackDeepLinkReceivedEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            DeepLinkReceived event = EventUtil.createDeepLinkReceivedEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                DeepLinkReceived event = EventUtil.createDeepLinkReceivedEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -403,18 +457,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackMessageNotificationEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("eventData");
-            ReadableArray contexts = details.getArray("contexts");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+                ReadableArray contexts = details.getArray("contexts");
 
-            MessageNotification event = EventUtil.createMessageNotificationEvent(argmap);
 
-            List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
-            event.customContexts.addAll(evCtxts);
+                MessageNotification event = EventUtil.createMessageNotificationEvent(argmap);
 
-            trackerController.track(event);
-            promise.resolve(true);
+                List<SelfDescribingJson> evCtxts = EventUtil.createContexts(contexts);
+                event.customContexts.addAll(evCtxts);
+
+                trackerController.track(event);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -425,15 +483,18 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackCustomEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            String eventName = details.getString("eventName");
-            ReadableMap argmap = details.getMap("eventData");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                String eventName = details.getString("eventName");
+                ReadableMap argmap = details.getMap("eventData");
 
-            HashMap<String, Object> eventData = argmap.toHashMap();
+                HashMap<String, Object> eventData = argmap.toHashMap();
 
-            trackerController.trackCustomEvent(eventName, JSONValue.toJSONString(eventData));
-            promise.resolve(true);
+                trackerController.trackCustomEvent(eventName, JSONValue.toJSONString(eventData));
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -444,14 +505,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void setCustomTags(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap argmap = details.getMap("tags");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("tags");
 
-            HashMap<String, Object> tags = argmap.toHashMap();
+                HashMap<String, Object> tags = argmap.toHashMap();
 
-            trackerController.setCustomTags(tags);
-            promise.resolve(true);
+                trackerController.setCustomTags(tags);
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -462,13 +526,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void clearCustomTags(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableArray argArray = details.getArray("tagKeys");
-
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableArray argArray = details.getArray("tagKeys");
 
-            List<String> tagKeys = EventUtil.createStrings(argArray);
-            trackerController.clearCustomTags(new HashSet<>(tagKeys));
-            promise.resolve(true);
+
+                List<String> tagKeys = EventUtil.createStrings(argArray);
+                trackerController.clearCustomTags(new HashSet<>(tagKeys));
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -480,9 +548,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            trackerController.clearAllCustomTags();
-            promise.resolve(true);
+                trackerController.clearAllCustomTags();
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -493,13 +565,18 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     public void trackClickEvent(ReadableMap details, Promise promise) {
         try {
             String namespace = details.getString("tracker");
-            ReadableMap eventMap = details.getMap("eventData");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap eventMap = details.getMap("eventData");
 
-            ButtonClick event = EventUtil.createButtonClickEvent(eventMap);
-            trackerController.track(event);
 
-            promise.resolve(true);
+                ButtonClick event = EventUtil.createButtonClickEvent(eventMap);
+                trackerController.track(event);
+
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -555,13 +632,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("userId")) {
-                trackerController.getSubject().setUserId(null);
+                if (details.isNull("userId")) {
+                    trackerController.getSubject().setUserId(null);
+                } else {
+                    trackerController.getSubject().setUserId(details.getString("userId"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setUserId(details.getString("userId"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -573,13 +654,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("networkUserId")) {
-                trackerController.getSubject().setNetworkUserId(null);
+                if (details.isNull("networkUserId")) {
+                    trackerController.getSubject().setNetworkUserId(null);
+                } else {
+                    trackerController.getSubject().setNetworkUserId(details.getString("networkUserId"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setNetworkUserId(details.getString("networkUserId"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -591,13 +676,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("domainUserId")) {
-                trackerController.getSubject().setDomainUserId(null);
+                if (details.isNull("domainUserId")) {
+                    trackerController.getSubject().setDomainUserId(null);
+                } else {
+                    trackerController.getSubject().setDomainUserId(details.getString("domainUserId"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setDomainUserId(details.getString("domainUserId"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -609,13 +698,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("ipAddress")) {
-                trackerController.getSubject().setIpAddress(null);
+                if (details.isNull("ipAddress")) {
+                    trackerController.getSubject().setIpAddress(null);
+                } else {
+                    trackerController.getSubject().setIpAddress(details.getString("ipAddress"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setIpAddress(details.getString("ipAddress"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -627,13 +720,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("useragent")) {
-                trackerController.getSubject().setUseragent(null);
+                if (details.isNull("useragent")) {
+                    trackerController.getSubject().setUseragent(null);
+                } else {
+                    trackerController.getSubject().setUseragent(details.getString("useragent"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setUseragent(details.getString("useragent"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -645,13 +742,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("timezone")) {
-                trackerController.getSubject().setTimezone(null);
+                if (details.isNull("timezone")) {
+                    trackerController.getSubject().setTimezone(null);
+                } else {
+                    trackerController.getSubject().setTimezone(details.getString("timezone"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setTimezone(details.getString("timezone"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -663,13 +764,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("language")) {
-                trackerController.getSubject().setLanguage(null);
+                if (details.isNull("language")) {
+                    trackerController.getSubject().setLanguage(null);
+                } else {
+                    trackerController.getSubject().setLanguage(details.getString("language"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setLanguage(details.getString("language"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -681,18 +786,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("screenResolution")) {
-                trackerController.getSubject().setScreenResolution(null);
+                if (details.isNull("screenResolution")) {
+                    trackerController.getSubject().setScreenResolution(null);
+                } else {
+                    ReadableArray screenRes = details.getArray("screenResolution");
+                    int width = screenRes.getInt(0);
+                    int height = screenRes.getInt(1);
+                    Size screenR = new Size(width, height);
+
+                    trackerController.getSubject().setScreenResolution(screenR);
+                }
+                promise.resolve(true);
             } else {
-                ReadableArray screenRes = details.getArray("screenResolution");
-                int width = screenRes.getInt(0);
-                int height = screenRes.getInt(1);
-                Size screenR = new Size(width, height);
-
-                trackerController.getSubject().setScreenResolution(screenR);
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -704,18 +813,22 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("screenViewport")) {
-                trackerController.getSubject().setScreenViewPort(null);
+                if (details.isNull("screenViewport")) {
+                    trackerController.getSubject().setScreenViewPort(null);
+                } else {
+                    ReadableArray screenView = details.getArray("screenViewport");
+                    int width = screenView.getInt(0);
+                    int height = screenView.getInt(1);
+                    Size screenVP = new Size(width, height);
+
+                    trackerController.getSubject().setScreenViewPort(screenVP);
+                }
+                promise.resolve(true);
             } else {
-                ReadableArray screenView = details.getArray("screenViewport");
-                int width = screenView.getInt(0);
-                int height = screenView.getInt(1);
-                Size screenVP = new Size(width, height);
-
-                trackerController.getSubject().setScreenViewPort(screenVP);
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -727,13 +840,17 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         try {
             String namespace = details.getString("tracker");
             TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
 
-            if (details.isNull("colorDepth")) {
-                trackerController.getSubject().setColorDepth(null);
+                if (details.isNull("colorDepth")) {
+                    trackerController.getSubject().setColorDepth(null);
+                } else {
+                    trackerController.getSubject().setColorDepth(details.getInt("colorDepth"));
+                }
+                promise.resolve(true);
             } else {
-                trackerController.getSubject().setColorDepth(details.getInt("colorDepth"));
+                promise.reject("ERROR", "TrackerController is null");
             }
-            promise.resolve(true);
 
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());
@@ -833,5 +950,4 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     private TrackerController getTracker(String namespace) {
         return namespace == null ? ConvivaAppAnalytics.getDefaultTracker() : ConvivaAppAnalytics.getTracker(namespace);
     }
-
 }

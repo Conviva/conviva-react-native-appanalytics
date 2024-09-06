@@ -139,6 +139,8 @@ const logMessages = {
     // api error prefix
     createTracker: 'createTracker:',
     removeTracker: 'removeTracker: trackerNamespace can only be a string',
+    getClientId: 'getClientId: failed fetching client id',
+    setClientId: 'setClientId: clientId is invalid',
     // methods
     trackSelfDesc: 'trackSelfDescribingEvent:',
     trackScreenView: 'trackScreenViewEvent:',
@@ -164,6 +166,7 @@ const logMessages = {
     setScreenViewport: 'setScreenViewport: screenViewport can only be of ScreenSize type or null',
     setColorDepth: 'setColorDepth: colorDepth can only be a number(integer) or null',
     setSubjectData: 'setSubjectData:',
+    createTrackerNotSet: 'createTracker not invoked prior:'
 };
 
 /*
@@ -1282,6 +1285,7 @@ function setSubjectData$1(namespace, config) {
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Apache License Version 2.0 for the specific language governing permissions and limitations there under.
  */
+let isTrackerInitialised = false;
 /**
  * Create a tracker from specified initial configuration.
  *
@@ -1290,8 +1294,12 @@ function setSubjectData$1(namespace, config) {
  */
 function createTracker$1(initConfig) {
     return initValidate(initConfig)
-        .then(() => RNConvivaTracker.createTracker(initConfig))
+        .then(() => {
+        isTrackerInitialised = true;
+        return RNConvivaTracker.createTracker(initConfig);
+    })
         .catch((error) => {
+        isTrackerInitialised = false;
         throw new Error(`${logMessages.createTracker} ${error.message}.`);
     });
 }
@@ -1305,6 +1313,10 @@ function removeTracker$1(trackerNamespace) {
     if (typeof trackerNamespace !== 'string') {
         return Promise.reject(new Error(logMessages.removeTracker));
     }
+    if (!isTrackerInitialised) {
+        return Promise.reject(new Error(logMessages.createTrackerNotSet));
+    }
+    isTrackerInitialised = false;
     return Promise.resolve(RNConvivaTracker.removeTracker({ tracker: trackerNamespace }));
 }
 /**
@@ -1313,7 +1325,34 @@ function removeTracker$1(trackerNamespace) {
  * @returns - A void promise
  */
 function removeAllTrackers$1() {
+    if (!isTrackerInitialised) {
+        return Promise.reject(new Error(logMessages.createTrackerNotSet));
+    }
     return Promise.resolve(RNConvivaTracker.removeAllTrackers());
+}
+/**
+ * Get the client id which is in prescribed format.
+ *
+ * @returns - A promise string if the client if available or genetrated
+ */
+function getClientId$1() {
+    return Promise.resolve(RNConvivaTracker.getClientId())
+        .catch((error) => {
+        throw new Error(`${logMessages.getClientId} ${error.message}.`);
+    });
+}
+/**
+ * Set the client id which is in the prescribed format.
+ *
+ * @param clientId {string} - client id generated for the application in the device
+ * @returns - A promise fullfilled if the client id is valid
+ */
+function setClientId$1(clid) {
+    // have necessary checks in place
+    if (!clid || clid === "" || clid.split(".").length != 4 || !clid.split(".").every(part => part !== "" && !isNaN(Number(part)))) {
+        return Promise.reject(new Error(logMessages.setClientId));
+    }
+    return Promise.resolve(RNConvivaTracker.setClientId({ clientId: clid }));
 }
 /**
  * Returns a function to track a SelfDescribing event by a tracker
@@ -1323,6 +1362,9 @@ function removeAllTrackers$1() {
  */
 function trackSelfDescribingEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackSelfDescribingEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1334,6 +1376,9 @@ function trackSelfDescribingEvent(namespace) {
  */
 function trackScreenViewEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackScreenViewEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1345,6 +1390,9 @@ function trackScreenViewEvent(namespace) {
  */
 function trackStructuredEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackStructuredEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1356,6 +1404,9 @@ function trackStructuredEvent(namespace) {
  */
 function trackPageView(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackPageView$1(namespace, argmap, contexts);
     };
 }
@@ -1367,6 +1418,9 @@ function trackPageView(namespace) {
  */
 function trackTimingEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackTimingEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1378,6 +1432,9 @@ function trackTimingEvent(namespace) {
  */
 function trackConsentGrantedEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackConsentGrantedEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1389,6 +1446,9 @@ function trackConsentGrantedEvent(namespace) {
  */
 function trackConsentWithdrawnEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackConsentWithdrawnEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1400,6 +1460,9 @@ function trackConsentWithdrawnEvent(namespace) {
  */
 function trackEcommerceTransactionEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackEcommerceTransactionEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1411,6 +1474,9 @@ function trackEcommerceTransactionEvent(namespace) {
  */
 function trackDeepLinkReceivedEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackDeepLinkReceivedEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1422,6 +1488,9 @@ function trackDeepLinkReceivedEvent(namespace) {
  */
 function trackMessageNotificationEvent(namespace) {
     return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackMessageNotificationEvent$1(namespace, argmap, contexts);
     };
 }
@@ -1433,26 +1502,41 @@ function trackMessageNotificationEvent(namespace) {
  */
 function trackCustomEvent(namespace) {
     return function (eventName, eventData, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackCustomEvent$1(namespace, eventName, eventData, contexts);
     };
 }
 function setCustomTags(namespace) {
     return function (tags, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return setCustomTags$1(namespace, tags, contexts);
     };
 }
 function setCustomTagsWithCategory(namespace) {
     return function (category, tags, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return setCustomTagsWithCategory$1(namespace, category, tags, contexts);
     };
 }
 function clearCustomTags(namespace) {
     return function (tagKeys, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return clearCustomTags$1(namespace, tagKeys, contexts);
     };
 }
 function clearAllCustomTags(namespace) {
     return function (contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return clearAllCustomTags$1(namespace, contexts);
     };
 }
@@ -1685,6 +1769,9 @@ function getForegroundIndex(namespace) {
  */
 function trackClickEvent(namespace) {
     return function (eventData) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
         return trackClickEvent$1(namespace, eventData);
     };
 }
@@ -2187,6 +2274,25 @@ function removeAllTrackers() {
     return removeAllTrackers$1()
         .catch((e) => errorHandler(e));
 }
+/**
+ * Gets the cliend id
+ *
+ * @returns - A string promise
+ */
+function getClientId() {
+    return Promise.resolve(getClientId$1())
+        .catch((e) => errorHandler(e));
+}
+/**
+ * Sets the cliend id
+ *
+ * @param clientId {string}
+ * @returns - A boolean promise
+ */
+function setClientId(clientId) {
+    return Promise.resolve(setClientId$1(clientId))
+        .catch((e) => errorHandler(e));
+}
 const autocaptureNavigationTrack = handleError((payload) => {
     checkDisplayNamePlugin();
     trackScreenViewEvent('CAT')(payload).catch((e) => errorHandler(e));
@@ -2200,5 +2306,5 @@ var index = {
     withReactNavigationAutotrack: withReactNavigationAutotrack(autocaptureNavigationTrack)
 };
 
-export { autocaptureNavigationTrack, createTracker, index as default, getWebViewCallback, removeAllTrackers, removeTracker, withReactNavigationAutotrack };
+export { autocaptureNavigationTrack, createTracker, index as default, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, withReactNavigationAutotrack };
 //# sourceMappingURL=conviva-react-native-appanalytics.js.map
