@@ -51,5 +51,5 @@ dependencies {
     implementation "com.squareup.okhttp3:okhttp:4.9.3"
     implementation "com.facebook.react:react-native:+"
     implementation 'com.googlecode.json-simple:json-simple:1.1'
-    implementation 'com.conviva.sdk:conviva-android-tracker:+'
+    implementation 'com.conviva.sdk:conviva-android-tracker:1.2.1'
 }
