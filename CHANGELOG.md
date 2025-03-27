@@ -1,6 +1,12 @@
 
 # Changelog
 
+## 0.2.2 (27/Mar/2025)
+- Exposing getClientId and setClientId methods for ts.
+
+## 0.2.1 (21/Mar/2025)
+- Using latest native android(1.2.1) and ios(1.0.3) libs
+
 ## 0.2.0 (06/SEP/2024)
 - Introduces API for setting the conviva identifier
 - Internal enhancements for the Android Bridge
