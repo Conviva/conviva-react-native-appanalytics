@@ -1,6 +1,9 @@
 
 # Changelog
 
+## 0.2.3 (23/Sep/2025)
+- Resolved an issue where certain network requests on Apple mobile platforms were not being captured by the DPI module.
+
 ## 0.2.2 (27/Mar/2025)
 - Exposing getClientId and setClientId methods for ts.
 

@@ -189,6 +189,16 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void cleanup(Promise promise) {
+        try {
+            // commented out deprecated methods
+            promise.resolve(true);
+
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+    @ReactMethod
     public void removeAllTrackers(Promise promise) {
         try {
             // commented out deprecated methods

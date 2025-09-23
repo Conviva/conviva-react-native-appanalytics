@@ -71,6 +71,11 @@ interface NetworkConfiguration {
      */
     requestHeaders?: Record<string, string>;
 }
+interface TraceparentConfiguration {
+    force: Boolean;
+    enabled: Boolean;
+    targetUrl: string[];
+}
 /**
  * TrackerConfiguration
  */
@@ -304,6 +309,7 @@ interface RemoteConfiguration {
  */
 interface TrackerControllerConfiguration {
     networkConfig?: NetworkConfiguration;
+    traceparentConfig?: TraceparentConfiguration;
     trackerConfig?: TrackerConfiguration;
     sessionConfig?: SessionConfiguration;
     emitterConfig?: EmitterConfiguration;
@@ -849,6 +855,12 @@ declare function removeTracker(trackerNamespace: string): Promise<boolean>;
  */
 declare function removeAllTrackers(): Promise<boolean>;
 /**
+ * Cleanup
+ *
+ * @returns - A boolean promise
+ */
+declare function cleanup(): Promise<boolean>;
+/**
  * Gets the cliend id
  *
  * @returns - A string promise
@@ -868,4 +880,4 @@ declare const _default: {
     withReactNavigationAutotrack: (AppContainer: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
 };
 
-export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, createTracker, _default as default, getWebViewCallback, removeAllTrackers, removeTracker, withReactNavigationAutotrack, getClientId, setClientId};
+export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, createTracker, cleanup, _default as default, getWebViewCallback, removeAllTrackers, removeTracker, withReactNavigationAutotrack, getClientId, setClientId};

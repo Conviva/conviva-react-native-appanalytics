@@ -173,6 +173,11 @@ RCT_EXPORT_METHOD(removeAllTrackers: (RCTPromiseResolveBlock)resolve rejecter:(R
     resolve(@YES);
 }
 
+RCT_EXPORT_METHOD(cleanup: (RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+    [CATAppAnalytics cleanup];
+    resolve(@YES);
+}
+
 RCT_EXPORT_METHOD(trackSelfDescribingEvent:
                   (NSDictionary *)details
                   resolver:(RCTPromiseResolveBlock)resolve

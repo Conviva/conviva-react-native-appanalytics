@@ -1331,6 +1331,14 @@ function removeAllTrackers$1() {
     return Promise.resolve(RNConvivaTracker.removeAllTrackers());
 }
 /**
+ * Cleanup
+ *
+ * @returns - A void promise
+ */
+function cleanup$1() {
+    return Promise.resolve(RNConvivaTracker.cleanup());
+}
+/**
  * Get the client id which is in prescribed format.
  *
  * @returns - A promise string if the client if available or genetrated
@@ -2275,6 +2283,15 @@ function removeAllTrackers() {
         .catch((e) => errorHandler(e));
 }
 /**
+ * Cleanup
+ *
+ * @returns - A boolean promise
+ */
+function cleanup() {
+    return cleanup$1()
+        .catch((e) => errorHandler(e));
+}
+/**
  * Gets the cliend id
  *
  * @returns - A string promise
@@ -2306,5 +2323,5 @@ var index = {
     withReactNavigationAutotrack: withReactNavigationAutotrack(autocaptureNavigationTrack)
 };
 
-export { autocaptureNavigationTrack, createTracker, index as default, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, withReactNavigationAutotrack };
+export { autocaptureNavigationTrack, cleanup, createTracker, index as default, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, withReactNavigationAutotrack };
 //# sourceMappingURL=conviva-react-native-appanalytics.js.map
