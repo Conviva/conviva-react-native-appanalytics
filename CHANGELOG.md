@@ -1,6 +1,9 @@
 
 # Changelog
 
+## 0.2.4 (16/Oct/2025)
+- Using latest android(v1.2.3) and ios(v1.5.0) native packages.
+
 ## 0.2.3 (23/Sep/2025)
 - Resolved an issue where certain network requests on Apple mobile platforms were not being captured by the DPI module.
 
