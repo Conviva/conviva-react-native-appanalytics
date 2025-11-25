@@ -1,6 +1,6 @@
 {
   "name": "@convivainc/conviva-react-native-appanalytics",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Conviva React Native Application Analytics Library",
   "main": "conviva-react-native-appanalytics.js",
   "repository": {
