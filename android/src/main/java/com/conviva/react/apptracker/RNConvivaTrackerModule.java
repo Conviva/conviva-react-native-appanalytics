@@ -48,13 +48,40 @@ import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 
+import com.facebook.react.bridge.ReactMarker;
+import com.facebook.react.bridge.ReactMarker.MarkerListener;
+import com.facebook.react.bridge.ReactMarkerConstants;
+
+
 public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
 
     private final ReactApplicationContext reactContext;
 
+    public static volatile long contentAppearedTimestamp;
+
+
     public RNConvivaTrackerModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.reactContext = reactContext;
+
+        addContentAppearedMarkerListener();
+    }
+
+    private void addContentAppearedMarkerListener() {
+        if (contentAppearedTimestamp <= 0) {
+            ReactMarker.addListener(new MarkerListener() {
+                @Override
+                public void logMarker(ReactMarkerConstants name, String tag, int instanceKey) {
+                    if (name == ReactMarkerConstants.CONTENT_APPEARED && contentAppearedTimestamp <= 0) {
+                        contentAppearedTimestamp = System.currentTimeMillis();
+                        TrackerController tracker = ConvivaAppAnalytics.getDefaultTracker();
+                        if (tracker != null) {
+                            tracker.setContentAppearedTimestamp(contentAppearedTimestamp);
+                        }
+                    }
+                }
+            });
+        }
     }
 
     @Override
@@ -163,7 +190,12 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
             }
 
             // create the tracker
-            ConvivaAppAnalytics.createTracker(this.reactContext, customerKey, appName, controllers.toArray(new Configuration[controllers.size()]));
+            TrackerController trackerController = ConvivaAppAnalytics.createTracker(this.reactContext, customerKey, appName, controllers.toArray(new Configuration[controllers.size()]));
+
+            //Set the contentAppearedTimestamp if already captured
+            if(trackerController != null && contentAppearedTimestamp > 0) {
+                trackerController.setContentAppearedTimestamp(contentAppearedTimestamp);
+            }
 
             promise.resolve(true);
 
@@ -951,6 +983,21 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
 
             // int fgIdx = trackerController.getSession().getForegroundIndex();
             // promise.resolve(fgIdx);
+            promise.resolve(true);
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
+    private void setContentAppearedTimestamp(ReadableMap argmap, Promise promise) {
+        try {
+            String namespace = argmap.getString("tracker");
+            long contentAppearedTimestamp = (long) argmap.getDouble("contentAppearedTimestamp");
+            TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                trackerController.setContentAppearedTimestamp(contentAppearedTimestamp);
+            }
             promise.resolve(true);
         } catch (Throwable t) {
             promise.reject("ERROR", t.getMessage());

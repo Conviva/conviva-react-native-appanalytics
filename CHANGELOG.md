@@ -1,6 +1,15 @@
 
 # Changelog
 
+## 0.2.6 (16/Dec/2025)
+- Improved App Load Time metric by collecting more data. 
+- Using latest android(v1.2.6) and ios(v1.7.0) native packages.
+
+## 0.2.5 (25/Nov/2025)
+- Improved crash reporting and ANRs to deliver deeper insights and faster fixes for a more stable app experience. Applicable for:
+- Android 11 (API 30) and above
+- iOS 14 and above
+
 ## 0.2.4 (16/Oct/2025)
 - Using latest android(v1.2.3) and ios(v1.5.0) native packages.
 
