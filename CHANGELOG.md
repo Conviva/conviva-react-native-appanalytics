@@ -2,7 +2,7 @@
 # Changelog
 
 ## 0.2.6 (16/Dec/2025)
-- Improved App Load Time metric by collecting more data. 
+- Improves App Load Time metric by collecting more data. 
 - Using latest android(v1.2.6) and ios(v1.7.0) native packages.
 
 ## 0.2.5 (25/Nov/2025)
