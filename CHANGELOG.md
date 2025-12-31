@@ -1,6 +1,11 @@
 
 # Changelog
 
+## 0.2.7 (31/Dec/2025)
+- Supports network request url query params tracking.
+- Enhanced the remote configuration feature to support instant updates.
+- Using latest android(v1.2.6) and ios(v1.8.0) native packages.
+
 ## 0.2.6 (16/Dec/2025)
 - Improves App Load Time metric by collecting more data. 
 - Using latest android(v1.2.6) and ios(v1.7.0) native packages.
