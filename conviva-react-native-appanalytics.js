@@ -52,11 +52,14 @@ function safeWaitCallback(callPromise, errHandle) {
  * Handles an error.
  *
  * @param err - The error to be handled.
+ * @param alwaysLog - When true, the error is logged regardless of the __DEV__ flag.
  */
-function errorHandler(err) {
-    if (__DEV__) {
+function errorHandler(err, alwaysLog = false) {
+    // #region agent log
+    console.warn('[DEBUG-148efd] errorHandler called: __DEV__=' + __DEV__ + ' alwaysLog=' + alwaysLog + ' msg=' + err.message);
+    // #endregion
+    if (__DEV__ || alwaysLog) {
         console.warn('ConvivaTracker:' + err.message);
-        return undefined;
     }
     return undefined;
 }
@@ -128,6 +131,10 @@ const logMessages = {
     deepLinkReq: 'deepLinkReceived event requires the url parameter to be set',
     messageNotificationReq: 'messageNotification event requires title, body, and trigger parameters to be set',
     trackCustomEvent: 'trackCustomEvent event requires name and data',
+    revenueEventNullEvent: 'event is null. Event not sent.',
+    revenueEventInvalidTotalOrderAmount: 'Must be a finite number. Event not sent.',
+    revenueEventInvalidTransactionId: 'Must be a non-empty string. Event not sent.',
+    revenueEventInvalidCurrency: 'Must be a non-empty string. Event not sent.',
     trackClickEvent: 'click event requires atleast one attribute',
     // custom tags contexts
     setCustomTags: 'setCustomTags requires tags',
@@ -152,6 +159,7 @@ const logMessages = {
     trackEcommerceTransaction: 'trackEcommerceTransaction:',
     trackDeepLinkReceived: 'trackDeepLinkReceivedEvent:',
     trackMessageNotification: 'trackMessageNotificationEvent:',
+    trackRevenueEvent: 'trackRevenueEvent:',
     removeGlobalContexts: 'removeGlobalContexts:',
     addGlobalContexts: 'addGlobalContexts:',
     // setters
@@ -413,11 +421,26 @@ function validateEcommerceTransaction(argmap) {
     return Promise.resolve(true);
 }
 /**
- * Validates a custom event
+ * Validates a revenue event
  *
  * @param argmap {Object} - the object to validate
  * @returns - boolean promise
  */
+function validateRevenueEvent(argmap) {
+    if (!isObject(argmap)) {
+        return Promise.reject(new Error(logMessages.revenueEventNullEvent));
+    }
+    if (typeof argmap.totalOrderAmount !== 'number' || !Number.isFinite(argmap.totalOrderAmount)) {
+        return Promise.reject(new Error(`invalid totalOrderAmount "${argmap.totalOrderAmount}". ${logMessages.revenueEventInvalidTotalOrderAmount}`));
+    }
+    if (typeof argmap.transactionId !== 'string' || argmap.transactionId.trim() === '') {
+        return Promise.reject(new Error(`invalid transactionId "${argmap.transactionId}". ${logMessages.revenueEventInvalidTransactionId}`));
+    }
+    if (typeof argmap.currency !== 'string' || argmap.currency.trim() === '') {
+        return Promise.reject(new Error(`invalid currency "${argmap.currency}". ${logMessages.revenueEventInvalidCurrency}`));
+    }
+    return Promise.resolve(true);
+}
 function validateCustomEvent(argmap) {
     // validate type
     if (!isObject(argmap)) {
@@ -952,6 +975,37 @@ function trackCustomEvent$1(namespace, name, arg, contexts = []) {
     }))
         .catch((error) => {
         throw new Error(`${logMessages.trackCustomEvent} ${error.message}`);
+    });
+}
+/**
+ * Tracks a revenue event
+ *
+ * @param namespace {string} - the tracker namespace
+ * @param argmap {Object} - the event data
+ * @param contexts {Array}- the event contexts
+ * @returns {Promise}
+ */
+function trackRevenueEvent$1(namespace, argmap, contexts = []) {
+    // #region agent log
+    console.warn('[DEBUG-148efd] trackRevenueEvent ENTRY __DEV__=' + __DEV__ + ' argmap=' + JSON.stringify(argmap));
+    // #endregion
+    return validateRevenueEvent(argmap)
+        .then(() => validateContexts(contexts))
+        .then(() => {
+        // #region agent log
+        console.warn('[DEBUG-148efd] trackRevenueEvent VALIDATION PASSED - calling native bridge');
+        // #endregion
+        return RNConvivaTracker.trackRevenueEvent({
+            tracker: namespace,
+            eventData: argmap,
+            contexts: contexts
+        });
+    })
+        .catch((error) => {
+        // #region agent log
+        console.warn('[DEBUG-148efd] trackRevenueEvent VALIDATION FAILED: ' + error.message);
+        // #endregion
+        throw new Error(`${logMessages.trackRevenueEvent} ${error.message}`);
     });
 }
 /**
@@ -1514,6 +1568,20 @@ function trackCustomEvent(namespace) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackCustomEvent$1(namespace, eventName, eventData, contexts);
+    };
+}
+/**
+ * Returns a function to track a RevenueEvent by a tracker
+ *
+ * @param namespace {string} - The tracker namespace
+ * @returns - A function to track a RevenueEvent
+ */
+function trackRevenueEvent(namespace) {
+    return function (argmap, contexts = []) {
+        if (!isTrackerInitialised) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
+        return trackRevenueEvent$1(namespace, argmap, contexts);
     };
 }
 function setCustomTags(namespace) {
@@ -2182,6 +2250,8 @@ controllerConfig = {}) {
     }));
     // mkMethod creates methods subscribed to the initTrackerPromise
     const mkMethod = safeWait(initTrackerPromise, errorHandler);
+    // mkMethodAlwaysLog creates methods that always log errors, regardless of __DEV__
+    const mkMethodAlwaysLog = safeWait(initTrackerPromise, (err) => errorHandler(err, true));
     // mkCallback creates callbacks subscribed to the initTrackerPromise
     const mkCallback = safeWaitCallback(initTrackerPromise, errorHandler);
     // track methods
@@ -2197,6 +2267,7 @@ controllerConfig = {}) {
     const trackDeepLinkReceivedEvent$1 = mkMethod(trackDeepLinkReceivedEvent(namespace));
     const trackMessageNotificationEvent$1 = mkMethod(trackMessageNotificationEvent(namespace));
     const trackCustomEvent$1 = mkMethod(trackCustomEvent(namespace));
+    const trackRevenueEvent$1 = mkMethodAlwaysLog(trackRevenueEvent(namespace));
     const trackClickEvent$1 = mkMethod(trackClickEvent(namespace));
     // custom tags contexts
     const setCustomTags$1 = mkMethod(setCustomTags(namespace));
@@ -2237,6 +2308,7 @@ controllerConfig = {}) {
         trackDeepLinkReceivedEvent: trackDeepLinkReceivedEvent$1,
         trackMessageNotificationEvent: trackMessageNotificationEvent$1,
         trackCustomEvent: trackCustomEvent$1,
+        trackRevenueEvent: trackRevenueEvent$1,
         setCustomTags: setCustomTags$1,
         setCustomTagsWithCategory: setCustomTagsWithCategory$1,
         clearCustomTags: clearCustomTags$1,

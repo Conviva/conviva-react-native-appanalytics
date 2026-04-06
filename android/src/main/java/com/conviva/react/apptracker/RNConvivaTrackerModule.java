@@ -13,6 +13,8 @@ import com.conviva.apptracker.configuration.TrackerConfiguration;
 import com.conviva.apptracker.controller.TrackerController;
 import com.conviva.apptracker.event.ButtonClick;
 import com.conviva.apptracker.event.ConsentGranted;
+import com.conviva.apptracker.revenue.ConvivaRevenueEvent;
+import com.conviva.apptracker.revenue.ConvivaRevenueEventItem;
 import com.conviva.apptracker.event.ConsentWithdrawn;
 import com.conviva.apptracker.event.DeepLinkReceived;
 import com.conviva.apptracker.event.EcommerceTransaction;
@@ -37,6 +39,7 @@ import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.ReadableMapKeySetIterator;
 
+import org.json.JSONObject;
 import org.json.simple.JSONValue;
 
 import java.util.ArrayList;
@@ -533,6 +536,78 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
                 HashMap<String, Object> eventData = argmap.toHashMap();
 
                 trackerController.trackCustomEvent(eventName, JSONValue.toJSONString(eventData));
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
+
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void trackRevenueEvent(ReadableMap details, Promise promise) {
+        try {
+            String namespace = details.getString("tracker");
+            TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap argmap = details.getMap("eventData");
+
+                double totalOrderAmount = argmap.getDouble("totalOrderAmount");
+                String transactionId = argmap.getString("transactionId");
+                String currency = argmap.getString("currency");
+
+                ConvivaRevenueEvent.Builder builder =
+                    ConvivaRevenueEvent.builder(totalOrderAmount, transactionId, currency);
+
+                if (argmap.hasKey("taxAmount") && !argmap.isNull("taxAmount"))
+                    builder.taxAmount(argmap.getDouble("taxAmount"));
+                if (argmap.hasKey("shippingCost") && !argmap.isNull("shippingCost"))
+                    builder.shippingCost(argmap.getDouble("shippingCost"));
+                if (argmap.hasKey("discount") && !argmap.isNull("discount"))
+                    builder.discount(argmap.getDouble("discount"));
+                if (argmap.hasKey("cartSize") && !argmap.isNull("cartSize"))
+                    builder.cartSize(argmap.getInt("cartSize"));
+                if (argmap.hasKey("paymentMethod") && !argmap.isNull("paymentMethod"))
+                    builder.paymentMethod(argmap.getString("paymentMethod"));
+                if (argmap.hasKey("paymentProvider") && !argmap.isNull("paymentProvider"))
+                    builder.paymentProvider(argmap.getString("paymentProvider"));
+                if (argmap.hasKey("extraMetadata") && !argmap.isNull("extraMetadata"))
+                    builder.extraMetadata(new JSONObject(argmap.getMap("extraMetadata").toHashMap()));
+
+                if (argmap.hasKey("items") && !argmap.isNull("items")) {
+                    ReadableArray itemsArray = argmap.getArray("items");
+                    List<ConvivaRevenueEventItem> items = new ArrayList<>();
+                    for (int i = 0; i < itemsArray.size(); i++) {
+                        ReadableMap itemDict = itemsArray.getMap(i);
+                        ConvivaRevenueEventItem.Builder itemBuilder = ConvivaRevenueEventItem.builder();
+                        if (itemDict.hasKey("productId") && !itemDict.isNull("productId"))
+                            itemBuilder.productId(itemDict.getString("productId"));
+                        if (itemDict.hasKey("name") && !itemDict.isNull("name"))
+                            itemBuilder.name(itemDict.getString("name"));
+                        if (itemDict.hasKey("sku") && !itemDict.isNull("sku"))
+                            itemBuilder.sku(itemDict.getString("sku"));
+                        if (itemDict.hasKey("category") && !itemDict.isNull("category"))
+                            itemBuilder.category(EventUtil.createStrings(itemDict.getArray("category")));
+                        if (itemDict.hasKey("unitPrice") && !itemDict.isNull("unitPrice"))
+                            itemBuilder.unitPrice(itemDict.getDouble("unitPrice"));
+                        if (itemDict.hasKey("quantity") && !itemDict.isNull("quantity"))
+                            itemBuilder.quantity(itemDict.getInt("quantity"));
+                        if (itemDict.hasKey("discount") && !itemDict.isNull("discount"))
+                            itemBuilder.discount(itemDict.getDouble("discount"));
+                        if (itemDict.hasKey("brand") && !itemDict.isNull("brand"))
+                            itemBuilder.brand(itemDict.getString("brand"));
+                        if (itemDict.hasKey("variant") && !itemDict.isNull("variant"))
+                            itemBuilder.variant(itemDict.getString("variant"));
+                        if (itemDict.hasKey("extraMetadata") && !itemDict.isNull("extraMetadata"))
+                            itemBuilder.extraMetadata(new JSONObject(itemDict.getMap("extraMetadata").toHashMap()));
+                        items.add(itemBuilder.build());
+                    }
+                    builder.items(items);
+                }
+
+                trackerController.trackRevenueEvent(builder.build());
                 promise.resolve(true);
             } else {
                 promise.reject("ERROR", "TrackerController is null");

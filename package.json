@@ -1,11 +1,15 @@
 {
   "name": "@convivainc/conviva-react-native-appanalytics",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Conviva React Native Application Analytics Library",
   "main": "conviva-react-native-appanalytics.js",
   "repository": {
     "type": "git",
     "url": "git+github.com:Conviva/conviva-react-native-appanalytics.git"
+  },
+  "dependencies": {
+    "hoist-non-react-statics": "^3.3.2",
+    "lodash": "^4.17.21"
   },
   "keywords": [
     "Conviva",

@@ -1,6 +1,10 @@
 
 # Changelog
 
+## 0.2.8 (06/Apr/2025)
+- Added trackRevenueEvent API to track purchase and revenue events.
+- Using latest android(v1.3.1) and ios(v1.10.1) native packages.
+
 ## 0.2.7 (31/Dec/2025)
 - Supports network request url query params tracking.
 - Enhanced the remote configuration feature to support instant updates.

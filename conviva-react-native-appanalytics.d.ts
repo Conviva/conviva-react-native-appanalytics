@@ -579,6 +579,39 @@ type MessageNotificationProps = {
     trigger: Trigger;
 };
 /**
+ * RevenueEventItem properties.
+ * All fields are optional.
+ */
+type RevenueEventItemProps = {
+    productId?: string;
+    name?: string;
+    sku?: string;
+    category?: string[];
+    unitPrice?: number;
+    quantity?: number;
+    discount?: number;
+    brand?: string;
+    variant?: string;
+    extraMetadata?: Record<string, unknown>;
+};
+/**
+ * RevenueEvent properties.
+ * Required: totalOrderAmount, transactionId, currency.
+ */
+type RevenueEventProps = {
+    totalOrderAmount: number;
+    transactionId: string;
+    currency: string;
+    taxAmount?: number;
+    shippingCost?: number;
+    discount?: number;
+    cartSize?: number;
+    paymentMethod?: string;
+    paymentProvider?: string;
+    items?: RevenueEventItemProps[];
+    extraMetadata?: Record<string, unknown>;
+};
+/**
  * The ReactNativeTracker type
  */
 type ReactNativeTracker = {
@@ -662,6 +695,13 @@ type ReactNativeTracker = {
      * @returns {Promise}
      */
     readonly trackCustomEvent: (eventName: string, eventData: any, contexts?: EventContext[]) => Promise<void>;
+    /**
+     * Tracks a revenue event
+     *
+     * @param argmap - The revenue event properties
+     * @param contexts - The array of event contexts
+     */
+    readonly trackRevenueEvent: (argmap: RevenueEventProps, contexts?: EventContext[]) => Promise<void>;
     /**
      * Sets custom tags
      *
@@ -880,4 +920,4 @@ declare const _default: {
     withReactNavigationAutotrack: (AppContainer: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
 };
 
-export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, createTracker, cleanup, _default as default, getWebViewCallback, removeAllTrackers, removeTracker, withReactNavigationAutotrack, getClientId, setClientId};
+export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, RevenueEventItemProps, RevenueEventProps, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, cleanup, createTracker, _default as default, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, withReactNavigationAutotrack };

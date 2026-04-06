@@ -45,6 +45,8 @@
 #import <ConvivaAppAnalytics/CATEcommerce.h>
 #import <ConvivaAppAnalytics/CATDeepLinkReceived.h>
 #import <ConvivaAppAnalytics/CATMessageNotification.h>
+#import <ConvivaAppAnalytics/CATRevenueEvent.h>
+#import <ConvivaAppAnalytics/CATRevenueEventItem.h>
 #import <Foundation/NSObject.h>
 
 @implementation RNConvivaTracker
@@ -655,6 +657,115 @@ RCT_EXPORT_METHOD(trackCustomEvent:
     }
 }
 
+RCT_EXPORT_METHOD(trackRevenueEvent:
+    (NSDictionary *)details
+            resolver:(RCTPromiseResolveBlock)resolve
+            rejecter:(RCTPromiseRejectBlock)reject) {
+    // #region agent log
+    NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent ENTERED with details: %@", details);
+    // #endregion
+    NSString *namespace = [details objectForKey:@"tracker"];
+
+    id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+
+    if (trackerController != nil) {
+        NSDictionary *argmap = [details objectForKey:@"eventData"];
+
+        NSNumber *totalOrderAmount = [argmap objectForKey:@"totalOrderAmount"];
+        NSString *transactionId = [argmap objectForKey:@"transactionId"];
+        NSString *currency = [argmap objectForKey:@"currency"];
+        // #region agent log
+        NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent totalOrderAmount=%@ transactionId=%@ currency=%@", totalOrderAmount, transactionId, currency);
+        // #endregion
+
+        CATRevenueEvent *event = [[CATRevenueEvent alloc]
+                                  initWithTotalOrderAmount:totalOrderAmount
+                                  transactionId:transactionId
+                                  currency:currency];
+
+        if ([argmap objectForKey:@"taxAmount"] && ![[argmap objectForKey:@"taxAmount"] isEqual:[NSNull null]]) {
+            event.taxAmount = [argmap objectForKey:@"taxAmount"];
+        }
+        if ([argmap objectForKey:@"shippingCost"] && ![[argmap objectForKey:@"shippingCost"] isEqual:[NSNull null]]) {
+            event.shippingCost = [argmap objectForKey:@"shippingCost"];
+        }
+        if ([argmap objectForKey:@"discount"] && ![[argmap objectForKey:@"discount"] isEqual:[NSNull null]]) {
+            event.discount = [argmap objectForKey:@"discount"];
+        }
+        if ([argmap objectForKey:@"cartSize"] && ![[argmap objectForKey:@"cartSize"] isEqual:[NSNull null]]) {
+            event.cartSize = [argmap objectForKey:@"cartSize"];
+        }
+        if ([argmap objectForKey:@"paymentMethod"] && ![[argmap objectForKey:@"paymentMethod"] isEqual:[NSNull null]]) {
+            event.paymentMethod = [argmap objectForKey:@"paymentMethod"];
+        }
+        if ([argmap objectForKey:@"paymentProvider"] && ![[argmap objectForKey:@"paymentProvider"] isEqual:[NSNull null]]) {
+            event.paymentProvider = [argmap objectForKey:@"paymentProvider"];
+        }
+        if ([argmap objectForKey:@"extraMetadata"] && ![[argmap objectForKey:@"extraMetadata"] isEqual:[NSNull null]]) {
+            event.extraMetadata = [argmap objectForKey:@"extraMetadata"];
+        }
+
+        NSArray *itemsArray = [argmap objectForKey:@"items"];
+        if (itemsArray && ![itemsArray isEqual:[NSNull null]] && [itemsArray isKindOfClass:[NSArray class]]) {
+            NSMutableArray<CATRevenueEventItem *> *items = [NSMutableArray array];
+            for (NSDictionary *itemDict in itemsArray) {
+                if (![itemDict isKindOfClass:[NSDictionary class]]) continue;
+
+                CATRevenueEventItem *item = [[CATRevenueEventItem alloc] init];
+
+                if ([itemDict objectForKey:@"productId"] && ![[itemDict objectForKey:@"productId"] isEqual:[NSNull null]]) {
+                    item.productId = [itemDict objectForKey:@"productId"];
+                }
+                if ([itemDict objectForKey:@"name"] && ![[itemDict objectForKey:@"name"] isEqual:[NSNull null]]) {
+                    item.name = [itemDict objectForKey:@"name"];
+                }
+                if ([itemDict objectForKey:@"sku"] && ![[itemDict objectForKey:@"sku"] isEqual:[NSNull null]]) {
+                    item.sku = [itemDict objectForKey:@"sku"];
+                }
+                if ([itemDict objectForKey:@"category"] && ![[itemDict objectForKey:@"category"] isEqual:[NSNull null]]) {
+                    item.category = [itemDict objectForKey:@"category"];
+                }
+                if ([itemDict objectForKey:@"unitPrice"] && ![[itemDict objectForKey:@"unitPrice"] isEqual:[NSNull null]]) {
+                    item.unitPrice = [itemDict objectForKey:@"unitPrice"];
+                }
+                if ([itemDict objectForKey:@"quantity"] && ![[itemDict objectForKey:@"quantity"] isEqual:[NSNull null]]) {
+                    item.quantity = [itemDict objectForKey:@"quantity"];
+                }
+                if ([itemDict objectForKey:@"discount"] && ![[itemDict objectForKey:@"discount"] isEqual:[NSNull null]]) {
+                    item.discount = [itemDict objectForKey:@"discount"];
+                }
+                if ([itemDict objectForKey:@"brand"] && ![[itemDict objectForKey:@"brand"] isEqual:[NSNull null]]) {
+                    item.brand = [itemDict objectForKey:@"brand"];
+                }
+                if ([itemDict objectForKey:@"variant"] && ![[itemDict objectForKey:@"variant"] isEqual:[NSNull null]]) {
+                    item.variant = [itemDict objectForKey:@"variant"];
+                }
+                if ([itemDict objectForKey:@"extraMetadata"] && ![[itemDict objectForKey:@"extraMetadata"] isEqual:[NSNull null]]) {
+                    item.extraMetadata = [itemDict objectForKey:@"extraMetadata"];
+                }
+
+                [items addObject:item];
+            }
+            event.items = items;
+        }
+
+        // #region agent log
+        NSLog(@"[DEBUG-148efd] iOS bridge calling native trackRevenueEvent now");
+        // #endregion
+        [trackerController trackRevenueEvent:event];
+        // #region agent log
+        NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent completed successfully");
+        // #endregion
+        resolve(@YES);
+    } else {
+        // #region agent log
+        NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent FAILED - tracker not found for namespace: %@", namespace);
+        // #endregion
+        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+        reject(@"ERROR", @"tracker with given namespace not found", error);
+    }
+}
+
 RCT_EXPORT_METHOD(setCustomTags:
     (NSDictionary *)details
             resolver:(RCTPromiseResolveBlock)resolve
@@ -1026,7 +1137,7 @@ RCT_EXPORT_METHOD(getIsInBackground:
 //        NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
 //        reject(@"ERROR", @"tracker with given namespace not found", error);
 //    }
-
+    
     @try {
         resolve(@(YES));
     } @catch (NSException *exception) {
