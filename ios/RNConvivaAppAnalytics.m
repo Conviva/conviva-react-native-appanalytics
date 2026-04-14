@@ -661,9 +661,7 @@ RCT_EXPORT_METHOD(trackRevenueEvent:
     (NSDictionary *)details
             resolver:(RCTPromiseResolveBlock)resolve
             rejecter:(RCTPromiseRejectBlock)reject) {
-    // #region agent log
-    NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent ENTERED with details: %@", details);
-    // #endregion
+
     NSString *namespace = [details objectForKey:@"tracker"];
 
     id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
@@ -674,10 +672,7 @@ RCT_EXPORT_METHOD(trackRevenueEvent:
         NSNumber *totalOrderAmount = [argmap objectForKey:@"totalOrderAmount"];
         NSString *transactionId = [argmap objectForKey:@"transactionId"];
         NSString *currency = [argmap objectForKey:@"currency"];
-        // #region agent log
-        NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent totalOrderAmount=%@ transactionId=%@ currency=%@", totalOrderAmount, transactionId, currency);
-        // #endregion
-
+        
         CATRevenueEvent *event = [[CATRevenueEvent alloc]
                                   initWithTotalOrderAmount:totalOrderAmount
                                   transactionId:transactionId
@@ -749,18 +744,9 @@ RCT_EXPORT_METHOD(trackRevenueEvent:
             event.items = items;
         }
 
-        // #region agent log
-        NSLog(@"[DEBUG-148efd] iOS bridge calling native trackRevenueEvent now");
-        // #endregion
         [trackerController trackRevenueEvent:event];
-        // #region agent log
-        NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent completed successfully");
-        // #endregion
         resolve(@YES);
     } else {
-        // #region agent log
-        NSLog(@"[DEBUG-148efd] iOS bridge trackRevenueEvent FAILED - tracker not found for namespace: %@", namespace);
-        // #endregion
         NSError* error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
         reject(@"ERROR", @"tracker with given namespace not found", error);
     }

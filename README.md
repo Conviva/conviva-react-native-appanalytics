@@ -76,22 +76,40 @@ tracker.trackPageView(pageViewEvent);
 ```
 
 ## Auto detect button clicks.
-Even though the React Native components can be natively mapped in Android and iOS, for the Auto detection of button clicks for **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components, needs explicit addition of babel transfomation. Add below plugin code in your application .babel.rc or babel.config.js file:
+Even though the React Native components can be natively mapped in Android and iOS, for the Auto detection of button clicks for **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components, needs explicit addition of babel transformation. Add below plugin code in your application `.babelrc` or `babel.config.js` file:
 
+**>= 0.3.0** - no extra dependencies needed in the app:
+```js
+
+"plugins": ["@convivainc/conviva-react-native-appanalytics/plugin"]
+
+```
+
+**<= 0.2.8** - also required `babel-types` and `babel-template` as explicit app-level dependencies:
 ```js
 
 "plugins": ["./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js"]
 
 ```
+```json
 
-## Auto detect ScreenView Events for tracking screen navigation.
-To support Conviva to Auto Detect the Screen Name part of the ScreenView Events, add below plugin code in your application .babel.rc or babel.config.js file:
-```js
-
-"plugins": ["add-react-displayname"]
+"babel-types": "...",
+"babel-template": "..."
 
 ```
 
+## `displayName` auto-detection
+**<= 0.2.8** - required as a separate entry in `.babelrc` / `babel.config.js`:
+```js
+"plugins": ["add-react-displayname"]
+```
+
+**>= 0.3.0** - no separate entry needed. `displayName` auto-detection is absorbed internally by the Conviva plugin:
+```js
+"plugins": ["@convivainc/conviva-react-native-appanalytics/plugin"]
+```
+
+## Auto detect ScreenView Events for tracking screen navigation.
 For React Navigation versions 5 and above, to autocapture screenviews, wrap withReactNavigationAutotrack(autocaptureNavigationTrack) around the NavigationContainer:
 
 ```js
@@ -114,7 +132,7 @@ withReactNavigationAutotrack(autocaptureNavigationTrack)(NavigationContainer);
 </ConvivaNavigationContainer>
 ```
 
-For React Navigation versions below 5, wrap the AppContainer (the result of a call to React Navigation’s createAppContainer() method) with withReactNavigationAutotrack(autocaptureNavigationTrack)
+For React Navigation versions below 5, wrap the AppContainer (the result of a call to React Navigation's createAppContainer() method) with withReactNavigationAutotrack(autocaptureNavigationTrack)
 ```js
 
 let AppNavigator = createStackNavigator(
@@ -189,9 +207,9 @@ tracker.clearAllCustomTags();
 Event | Occurrence |
 ------|------------ |
 network_request | after receiving the network request response ; auto collected from the Native Sensors, Need android-plugin inclusion for Android|
-screen_view | when the screen is interacted on either first launch or relaunch ; auto collected from the Native Sensors + React Native Screens; Need add-react-displayname plugin and wrapping of Navigation Components |
+screen_view | when the screen is interacted on either first launch or relaunch ; auto collected from the Native Sensors + React Native Screens; Need Conviva `plugin.js` (includes `displayName` injection) and wrapping of Navigation Components |
 application_error | when an error occurrs in the application ; auto collected from the Native Sensors|
-button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components; Need Conviva index.js from the node_modules folder|
+button_click | on the button click callback ; auto collected from the Native Sensors + React Native **Button**, **TouchableHighlight**, **TouchableOpacity**, **TouchableWithoutFeedback** and **TouchableNativeFeedback** Components; Need Conviva `plugin.js` from the node_modules folder|
 application_background | when the application is taken to the background ; auto collected from the Native Sensors|
 application_foreground | when the application is taken to the foreground ; auto collected from the Native Sensors|
 application_install | when the application is launched for the first time after it's installed. (It's not the exact installed time.) |
