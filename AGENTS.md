@@ -48,8 +48,7 @@ Single source of truth. Governs: Cursor, Claude Code, Codex, ChatGPT, Gemini CLI
 | `CUSTOMER_KEY` | Conviva Customer Key - never guess or hardcode |
 | `APP_NAME` | App name string passed to tracker initialization |
 | `CONVIVA_RN_VERSION` | Exact npm version of `@convivainc/conviva-react-native-appanalytics` -- never use `*` |
-| `ADD_DISPLAYNAME_VERSION` | **For `CONVIVA_RN_VERSION <= 0.2.8` only.** Exact version of `babel-plugin-add-react-displayname` to add to `devDependencies` in `package.json` -- never use `*`. Also add `'add-react-displayname'` to the `plugins` array explicitly. |
-| `BABEL_DISPLAY_NAME_VERSION` | **For `CONVIVA_RN_VERSION >= 0.2.9` only -- fallback only.** `@babel/plugin-transform-react-display-name` is declared as a `dependency` of the Conviva package and resolves automatically from the package's own `node_modules` -- no host project `devDependencies` entry is needed in standard npm projects. Only required explicitly if you see `[conviva] Could not resolve @babel/plugin-transform-react-display-name` (e.g. strict pnpm / Yarn PnP environments). In that case, pin the exact version here and add to `devDependencies`. |
+| `ADD_DISPLAYNAME_VERSION` | **For `CONVIVA_RN_VERSION <= 0.2.8` only.** Use `0.0.5` -- this is the final published version of `babel-plugin-add-react-displayname`. Add to `devDependencies` in `package.json`; also add `'add-react-displayname'` to the `plugins` array explicitly. |
 | `ANDROID_PLUGIN_VERSION` | Exact Android plugin version from GitHub Releases -- **never use `CONVIVA_RN_VERSION` for this** |
 | `APP_TYPE_ANDROID` | **Auto-detected during Section 3a scan** by inspecting `android/app/src/main/AndroidManifest.xml` for non-ReactActivity Activities (see `AGENTS-android-setup.md` Step 1 for classification rules). After detection, include the result as a **confirmation** alongside the other required input questions: *"I detected [standard React Native / hybrid] based on your AndroidManifest.xml — is that correct?"* Do not ask the developer to classify from scratch — detect first, then confirm. If hybrid is confirmed, also ask for `ANDROID_TRACKER_VERSION` in the same prompt. |
 | `ANDROID_TRACKER_VERSION` | *(Hybrid apps only)* Exact version of `com.conviva.sdk:conviva-android-tracker` from [GitHub Releases](https://github.com/Conviva/conviva-android-appanalytics/releases). This is a **separate artifact with its own release cycle** -- it is NOT the same as `CONVIVA_RN_VERSION`. Never reuse the npm version number here. Only required when `APP_TYPE_ANDROID` is hybrid. |
@@ -240,25 +239,21 @@ iOS has no equivalent of Android's `AndroidManifest.xml` that declares all scree
 
 ---
 
-## 9. Babel Plugin Setup (Button Click Auto-detection)
+## 9. Babel Plugin Setup (Button Clicks and `displayName` Auto-detection)
 
-To enable auto-detection of button clicks for `Button`, `TouchableHighlight`, `TouchableOpacity`, `TouchableWithoutFeedback`, and `TouchableNativeFeedback` components, add the Conviva babel plugin.
+The Conviva Babel plugin does two things:
+1. **Button click auto-detection** -- instruments `Button`, `TouchableHighlight`, `TouchableOpacity`, `TouchableWithoutFeedback`, and `TouchableNativeFeedback` components to fire `button_click` events automatically.
+2. **`displayName` injection** -- injects `displayName` into React class components, enabling component name identification for both `button_click` events and `screen_view` auto-detection via the React Navigation wrapper (Section 12).
 
-**Target file:** `babel.config.js` or `.babelrc` in the project root.
-
-**Check:** Read the existing plugins array before making changes. Append only - do not modify or remove existing plugins.
-
-**Determine which approach to use based on `CONVIVA_RN_VERSION`:**
+**Target file:** `babel.config.js` or `.babelrc` in the project root. Read the existing `plugins` array first. Append only -- never remove or reorder existing plugins.
 
 ---
 
 ### For CONVIVA_RN_VERSION <= 0.2.8
 
-Add two separate plugins -- the Conviva instrumentation plugin for button click auto-detection, and `add-react-displayname` for screen view display name injection.
+Add **two** plugins and **three** devDependencies.
 
-**Display name coverage:** `babel-plugin-add-react-displayname` injects `ClassName.displayName = 'ClassName'` into every ES6 class component that **extends `React.Component` or `Component`**. All standard React Native screen components qualify. This is functionally equivalent to the coverage provided by `injectClassDisplayName` in `CONVIVA_RN_VERSION >= 0.2.9` (which targets any class with a `render()` method).
-
-**For `babel.config.js`:**
+**`babel.config.js`:**
 ```js
 module.exports = {
   presets: [...],
@@ -270,7 +265,7 @@ module.exports = {
 };
 ```
 
-**For `.babelrc`:**
+**`.babelrc`:**
 ```json
 {
   "plugins": [
@@ -280,61 +275,67 @@ module.exports = {
 }
 ```
 
-Install `babel-plugin-add-react-displayname` as a `devDependency` using the exact `ADD_DISPLAYNAME_VERSION`:
+Add to `devDependencies` in `package.json`:
 ```json
-"babel-plugin-add-react-displayname": "<ADD_DISPLAYNAME_VERSION>"
-```
-
-Before adding, scan `package.json` `dependencies` and `devDependencies`:
-- If `babel-types` / `babel-template` are already present at **any `6.x` version** in either block -> do **not** add a duplicate entry; the existing entry is sufficient and will resolve correctly from `node_modules`.
-- If they are **absent** from both blocks -> add both to `devDependencies` at the minimum safe version:
-```json
+"babel-plugin-add-react-displayname": "0.0.5",
 "babel-types": "^6.26.0",
 "babel-template": "^6.26.0"
 ```
-- If they are present at a version **outside `6.x`** -> stop and report; these packages were discontinued after Babel 6 and only `6.x` builds are compatible with `instrumentation/index.js`.
+
+> `babel-plugin-add-react-displayname` `0.0.5` is the final published version of this package.
+> `babel-types` and `babel-template` `^6.26.0` are required by `instrumentation/index.js`. Before adding, check `package.json`: if either is already present at any `6.x` version, skip it. If present at a non-`6.x` version, stop and report to the developer.
 
 ---
 
-### For CONVIVA_RN_VERSION >= 0.2.9
+### For CONVIVA_RN_VERSION >= 0.3.0
 
-A single unified Conviva plugin handles both button click auto-detection and screen view display name injection.
+Add **one** plugin. No extra devDependencies are needed.
 
-**Display name coverage:** `plugin.js` injects `ClassName.displayName = 'ClassName'` via `injectClassDisplayName` for every ES6 class declaration that has a **`render()` method** -- this covers all standard React Native screen components. This is functionally equivalent to the coverage provided by `babel-plugin-add-react-displayname` in `CONVIVA_RN_VERSION <= 0.2.8` (which targets classes extending `React.Component`).
+**`babel.config.js`:**
+```js
+module.exports = {
+  presets: [...],
+  plugins: [
+    // ... existing plugins ...
+    '@convivainc/conviva-react-native-appanalytics/plugin',
+  ],
+};
+```
 
-**Migrating from CONVIVA_RN_VERSION <= 0.2.8:** When upgrading to `>= 0.2.9`, remove the two entries added for 0.2.8 and replace with the single unified plugin:
-- Remove `'./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js'` from `plugins`
-- Remove `'add-react-displayname'` from `plugins`
-- Remove `"babel-plugin-add-react-displayname"` from `devDependencies`
-- Add `'@convivainc/conviva-react-native-appanalytics/plugin'` to `plugins`
-- `@babel/plugin-transform-react-display-name` resolves automatically from the Conviva package -- no `devDependencies` entry needed
+**`.babelrc`:**
+```json
+{
+  "plugins": [
+    "@convivainc/conviva-react-native-appanalytics/plugin"
+  ]
+}
+```
 
-See `AGENTS-snippets.md` -> Babel Plugin Configuration (>= 0.2.9) for exact plugin strings. Append only -- do not modify or remove existing plugins.
+> Both button click instrumentation and `displayName` injection are bundled inside this single plugin. Do **not** add `add-react-displayname` or `@babel/plugin-transform-react-display-name` to `plugins` or `devDependencies`.
 
-Display name injection for screen_view auto-detection is bundled inside the Conviva plugin -- do NOT add `@babel/plugin-transform-react-display-name` to the `plugins` array in `babel.config.js`.
-
-`@babel/plugin-transform-react-display-name` is declared as a direct `dependency` of the Conviva package and resolves automatically from the package's own `node_modules` -- no explicit `devDependencies` entry is required in the host project for standard npm. If you see `[conviva] Could not resolve @babel/plugin-transform-react-display-name` (pnpm / Yarn PnP environments), see `AGENTS-troubleshooting.md`.
+**If upgrading from <= 0.2.8:** remove `instrumentation/index.js` and `'add-react-displayname'` from `plugins`; remove `babel-plugin-add-react-displayname`, `babel-types`, and `babel-template` from `devDependencies`; then add `'@convivainc/conviva-react-native-appanalytics/plugin'`.
 
 ---
 
-### Click Event Attribute Requirements
+### After editing `babel.config.js`
 
-The Conviva plugin wraps each auto-tracked touchable in a Higher-Order Component that fires `convivaAutotrackPress`. The native layer requires **at least one** of the following attributes to be non-empty for every click event:
+Restart Metro with cache cleared (applies to both versions):
+```bash
+npx react-native start --reset-cache
+```
 
-| Attribute | How it is populated |
-|---|---|
-| `elementText` | Fiber tree traversal -- finds the text content of any `<Text>` child at any depth |
-| `elementClasses` | Collected from `componentThis.displayName` -- may be empty in some versions |
-| `elementType` | Collected from `componentThis.elementType` -- may be empty in some versions |
-| `elementId` | Collected from `componentThis.id` -- not set automatically |
+### Button Click -- ensure components have text
 
-The most reliable attribute is `elementText`. Ensure every auto-tracked touchable has at least one `<Text>` child. Icon-only touchables with no `<Text>` child can use a zero-size hidden `<Text>` as a workaround.
+Every auto-tracked touchable must have at least one `<Text>` child so the SDK can capture a meaningful `elementText` for the click event. For icon-only buttons with no visible text, add a zero-size hidden `<Text>`:
+```jsx
+<TouchableOpacity onPress={handleBack}>
+  <Icon name="arrow-back" />
+  <Text style={{ width: 0, height: 0, overflow: 'hidden' }}>Back</Text>
+</TouchableOpacity>
+```
+> `accessibilityLabel` alone is not captured. Only `<Text>` content is read. If no text is present, the click event will be dropped with a warning. See `AGENTS-troubleshooting.md` for details.
 
-> Note: `accessibilityLabel` alone does **not** populate `elementText`. Only `<Text>` component content is read by the fiber traversal.
-
-See `AGENTS-troubleshooting.md` -> "Button Click Auto-detection Not Working" for the full error details and all workarounds.
-
-**Known behavior -- `Conviva: Display names are not available` warning (both versions):** This is a known false positive. The SDK probe never triggers regardless of configuration. No action needed. See `AGENTS-troubleshooting.md` for details.
+**Known warning -- `Conviva: Display names are not available`:** This is a known false positive logged by the SDK on startup. It does not affect functionality. No action needed.
 
 ---
 
@@ -409,6 +410,7 @@ See `AGENTS-snippets.md` -> React Navigation Autotracking for complete JS and TS
 | `createTracker(customerKey, appName)` | Initialize tracker (once) |
 | `createTracker(customerKey, appName, controllerConfig)` | Initialize with optional config (only if developer requests) |
 | `tracker.trackCustomEvent(eventName, eventData)` | Track custom event |
+| `tracker.trackRevenueEvent(argmap)` | Track purchase / revenue event (>= 0.2.8) |
 | `tracker.setCustomTags(tags)` | Set custom tags |
 | `tracker.setCustomTagsWithCategory(category, tags)` | Set custom tags with category |
 | `tracker.clearCustomTags(tagKeys)` | Clear specific tags |

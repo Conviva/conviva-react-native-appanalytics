@@ -55,9 +55,6 @@ function safeWaitCallback(callPromise, errHandle) {
  * @param alwaysLog - When true, the error is logged regardless of the __DEV__ flag.
  */
 function errorHandler(err, alwaysLog = false) {
-    // #region agent log
-    console.warn('[DEBUG-148efd] errorHandler called: __DEV__=' + __DEV__ + ' alwaysLog=' + alwaysLog + ' msg=' + err.message);
-    // #endregion
     if (__DEV__ || alwaysLog) {
         console.warn('ConvivaTracker:' + err.message);
     }
@@ -986,25 +983,14 @@ function trackCustomEvent$1(namespace, name, arg, contexts = []) {
  * @returns {Promise}
  */
 function trackRevenueEvent$1(namespace, argmap, contexts = []) {
-    // #region agent log
-    console.warn('[DEBUG-148efd] trackRevenueEvent ENTRY __DEV__=' + __DEV__ + ' argmap=' + JSON.stringify(argmap));
-    // #endregion
     return validateRevenueEvent(argmap)
         .then(() => validateContexts(contexts))
-        .then(() => {
-        // #region agent log
-        console.warn('[DEBUG-148efd] trackRevenueEvent VALIDATION PASSED - calling native bridge');
-        // #endregion
-        return RNConvivaTracker.trackRevenueEvent({
-            tracker: namespace,
-            eventData: argmap,
-            contexts: contexts
-        });
-    })
+        .then(() => RNConvivaTracker.trackRevenueEvent({
+        tracker: namespace,
+        eventData: argmap,
+        contexts: contexts
+    }))
         .catch((error) => {
-        // #region agent log
-        console.warn('[DEBUG-148efd] trackRevenueEvent VALIDATION FAILED: ' + error.message);
-        // #endregion
         throw new Error(`${logMessages.trackRevenueEvent} ${error.message}`);
     });
 }
@@ -2091,7 +2077,7 @@ class NavigationUtil {
     }
 }
 
-const version = "0.22.6";
+const version = "0.3.0";
 
 const { Platform } = require('react-native');
 let reactNativeVersionString = null;
@@ -2387,7 +2373,6 @@ const autocaptureNavigationTrack = handleError((payload) => {
     trackScreenViewEvent('CAT')(payload).catch((e) => errorHandler(e));
 }, 'Event autocapture', true);
 const autocaptureTrack = handleError((payload) => {
-    checkDisplayNamePlugin();
     trackClickEvent('CAT')(payload).catch((e) => errorHandler(e));
 }, 'Event autocapture', true);
 var index = {

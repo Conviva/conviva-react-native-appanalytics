@@ -227,6 +227,43 @@ tracker.clearAllCustomTags();
 
 ---
 
+## Revenue Event Tracking (>= 0.2.8)
+
+Use `trackRevenueEvent()` to track purchase and revenue events. Required fields: `totalOrderAmount`, `transactionId`, `currency`.
+
+```js
+tracker.trackRevenueEvent({
+  totalOrderAmount: 49.99,
+  transactionId: 'txn-001',
+  currency: 'USD',
+  taxAmount: 4.50,
+  shippingCost: 5.99,
+  paymentMethod: 'credit_card',
+  items: [
+    {
+      productId: 'prod-123',
+      name: 'Widget',
+      unitPrice: 19.99,
+      quantity: 2,
+    },
+  ],
+});
+```
+
+**TypeScript:**
+```ts
+import { RevenueEventProps } from '@convivainc/conviva-react-native-appanalytics';
+
+const revenueEvent: RevenueEventProps = {
+  totalOrderAmount: 49.99,
+  transactionId: 'txn-001',
+  currency: 'USD',
+};
+tracker.trackRevenueEvent(revenueEvent);
+```
+
+---
+
 ## PageView Tracking
 
 Use to track in-app page navigations explicitly (distinct from automatic screen view tracking).
@@ -317,7 +354,7 @@ The required Babel configuration depends on the installed `CONVIVA_RN_VERSION`. 
 
 ### For CONVIVA_RN_VERSION <= 0.2.8
 
-Add two separate plugins for button click auto-detection and screen view display name injection.
+Add two separate plugins for button click auto-detection and `displayName` injection.
 
 #### babel.config.js
 
@@ -344,15 +381,21 @@ module.exports = {
 }
 ```
 
-Add `babel-plugin-add-react-displayname` to `devDependencies` in `package.json` using the exact `ADD_DISPLAYNAME_VERSION`:
+Add the following to `devDependencies` in `package.json`:
 ```json
-"babel-plugin-add-react-displayname": "<ADD_DISPLAYNAME_VERSION>"
+"babel-plugin-add-react-displayname": "0.0.5",
+"babel-types": "^6.26.0",
+"babel-template": "^6.26.0"
 ```
+
+- `babel-plugin-add-react-displayname` `0.0.5` is the final published version.
+- `babel-types` and `babel-template` at `^6.26.0` are legacy Babel 6 packages required by `instrumentation/index.js`; they are not installed automatically in Babel 7 projects.
+
 Then run `npm install` (or `yarn` / `pnpm install`) from the project root.
 
 ---
 
-### For CONVIVA_RN_VERSION >= 0.2.9
+### For CONVIVA_RN_VERSION >= 0.3.0
 
 A single unified Conviva plugin handles both button click and screen view auto-detection.
 
@@ -381,7 +424,7 @@ module.exports = {
 }
 ```
 
-> The Conviva instrumentation plugin bundles `@babel/plugin-transform-react-display-name` internally via Babel's `inherits` -- do NOT add it separately to `plugins`. Display name injection for screen_view auto-detection is handled automatically.
+> The Conviva instrumentation plugin bundles `@babel/plugin-transform-react-display-name` internally via Babel's `inherits` -- do NOT add it separately to `plugins`. `displayName` injection (used for button click and screen_view component identification) is handled automatically.
 > `@babel/plugin-transform-react-display-name` is declared as a direct `dependency` of the Conviva package and installs transitively into the host project's `node_modules` -- no explicit `devDependencies` entry is required.
 
 ---

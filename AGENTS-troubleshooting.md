@@ -12,7 +12,7 @@ Symptoms: `SyntaxError` or `Cannot find module` after updating `babel.config.js`
 
 Fix:
 1. **For CONVIVA_RN_VERSION <= 0.2.8:** Confirm the plugin path is correct: `./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js`
-2. **For CONVIVA_RN_VERSION >= 0.2.9:** Confirm the plugin resolves correctly: `'@convivainc/conviva-react-native-appanalytics/plugin'`
+2. **For CONVIVA_RN_VERSION >= 0.3.0:** Confirm the plugin resolves correctly: `'@convivainc/conviva-react-native-appanalytics/plugin'`
 3. Confirm the npm package is installed: check `node_modules/@convivainc/conviva-react-native-appanalytics/` exists.
 4. Clear Metro cache and restart:
    ```bash
@@ -41,23 +41,25 @@ Fix:
 
 Symptoms: `Cannot find module 'add-react-displayname'`
 
-Fix: Add `babel-plugin-add-react-displayname` to `devDependencies` in `package.json`:
+Fix: Add `babel-plugin-add-react-displayname` to `devDependencies` in `package.json` (`0.0.5` is the final published version):
 ```json
-"babel-plugin-add-react-displayname": "<ADD_DISPLAYNAME_VERSION>"
+"babel-plugin-add-react-displayname": "0.0.5"
 ```
 Then run `npm install` (or `yarn` / `pnpm install`) from the project root.
 Restart Metro with `--reset-cache` after installing.
 
-**Issue: `@babel/plugin-transform-react-display-name` not found (CONVIVA_RN_VERSION >= 0.2.9)**
+**Issue: `@babel/plugin-transform-react-display-name` not found (CONVIVA_RN_VERSION >= 0.3.0)**
 
 Symptoms: `[conviva] Could not resolve @babel/plugin-transform-react-display-name`
 
-Fix: Add `@babel/plugin-transform-react-display-name` to `devDependencies` in `package.json` at the exact pinned version:
+Cause: In standard npm projects this package resolves automatically from the Conviva package's own `node_modules`. In strict pnpm or Yarn PnP environments, nested resolution is blocked and the package must be explicitly declared in the host project.
+
+Fix: Add `@babel/plugin-transform-react-display-name` to `devDependencies` in `package.json`. Use the same version declared in `node_modules/@convivainc/conviva-react-native-appanalytics/package.json`:
 ```json
-"@babel/plugin-transform-react-display-name": "<BABEL_DISPLAY_NAME_VERSION>"
+"@babel/plugin-transform-react-display-name": "<version-from-conviva-package>"
 ```
 Then run `npm install` (or `yarn` / `pnpm install`) from the project root.
-Do NOT add it to the `plugins` array in `babel.config.js` -- the Conviva instrumentation plugin bundles it internally. It only needs to be present in `node_modules`.
+Do NOT add it to the `plugins` array in `babel.config.js` -- the Conviva plugin resolves it internally. It only needs to be present in `node_modules`.
 
 ---
 
@@ -67,7 +69,7 @@ Symptoms: `button_click` events are not firing for `TouchableOpacity`, `Touchabl
 
 Checklist:
 1. **For CONVIVA_RN_VERSION <= 0.2.8:** Confirm `./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js` is in the `plugins` array of `babel.config.js` or `.babelrc`. Also confirm `add-react-displayname` is in `plugins` and `babel-plugin-add-react-displayname` is installed as a `devDependency`.
-2. **For CONVIVA_RN_VERSION >= 0.2.9:** Confirm `'@convivainc/conviva-react-native-appanalytics/plugin'` is in the `plugins` array of `babel.config.js` or `.babelrc`.
+2. **For CONVIVA_RN_VERSION >= 0.3.0:** Confirm `'@convivainc/conviva-react-native-appanalytics/plugin'` is in the `plugins` array of `babel.config.js` or `.babelrc`.
 3. Metro bundler was restarted with `--reset-cache` after adding the plugin.
 4. The component is one of the supported types: `Button`, `TouchableHighlight`, `TouchableOpacity`, `TouchableWithoutFeedback`, `TouchableNativeFeedback`. The `Pressable` component is not automatically instrumented.
 5. On Android: confirm the `android-plugin` is applied in `android/app/build.gradle` (see AGENTS-android-setup.md).
@@ -127,11 +129,9 @@ The native layer requires at least one attribute to be non-empty. For touchables
 
 Symptoms: `console.warn('Conviva: Display names are not available')` appears in the Metro / device log when `autocaptureNavigationTrack` or `autocaptureTrack` fires.
 
-Cause: This is a **known false positive** in the SDK. The SDK uses `class DisplayNameTest { render() {} }` as a probe to detect whether the display name plugin ran. `DisplayNameTest` does not extend `React.Component` or `Component`. `add-react-displayname` (used for `CONVIVA_RN_VERSION <= 0.2.8`) only injects `displayName` into classes that extend `React.Component` / `Component` -- it correctly instruments real screen components but deliberately skips non-React classes like `DisplayNameTest`. For `CONVIVA_RN_VERSION >= 0.2.9`, the unified plugin uses `@babel/plugin-transform-react-display-name` internally, which additionally only handles `React.createClass()` / `createReactClass()` call patterns (not any class declaration) -- so the probe still fails. In both cases `DisplayNameTest.displayName` is never set and the warning fires unconditionally regardless of configuration.
+Cause: This is a **known false positive** in the SDK. The SDK runs an internal startup probe to check whether `displayName` injection is active. The probe class intentionally does not match the patterns targeted by either the `<= 0.2.8` or `>= 0.3.0` plugins, so the warning fires unconditionally regardless of configuration.
 
-Impact: **None on actual functionality.** Actual screen components that extend `React.Component` are correctly handled:
-- For `CONVIVA_RN_VERSION <= 0.2.8`: `add-react-displayname` injects `displayName` into all ES6 class components extending `React.Component`.
-- For `CONVIVA_RN_VERSION >= 0.2.9`: `plugin.js` injects `ClassName.displayName = 'ClassName'` for all ES6 class declarations with a `render()` method via `injectClassDisplayName`.
+Impact: **None on actual functionality.** The `displayName` plugin is working correctly -- the warning only reflects that the internal probe was not matched, not that real components are affected.
 
 Action: **Ignore this warning.** No code change is needed to suppress it. Do not add or remove Babel plugin entries to try to fix it -- doing so will not affect this warning.
 
@@ -143,7 +143,7 @@ Symptoms: `screen_view` events are not firing or screen names are missing.
 
 Checklist:
 1. **For CONVIVA_RN_VERSION <= 0.2.8:** Confirm `add-react-displayname` is in the `plugins` array of `babel.config.js` or `.babelrc` and `babel-plugin-add-react-displayname` is installed as a `devDependency`. Confirm `./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js` is also in `plugins`.
-2. **For CONVIVA_RN_VERSION >= 0.2.9:** Confirm `'@convivainc/conviva-react-native-appanalytics/plugin'` is in the `plugins` array of `babel.config.js`. `@babel/plugin-transform-react-display-name` is bundled inside the Conviva package and resolves automatically -- no `devDependencies` entry is required. If you see `[conviva] Could not resolve @babel/plugin-transform-react-display-name`, see the error entry above.
+2. **For CONVIVA_RN_VERSION >= 0.3.0:** Confirm `'@convivainc/conviva-react-native-appanalytics/plugin'` is in the `plugins` array of `babel.config.js`. `@babel/plugin-transform-react-display-name` is bundled inside the Conviva package and resolves automatically -- no `devDependencies` entry is required. If you see `[conviva] Could not resolve @babel/plugin-transform-react-display-name`, see the error entry above.
 3. Metro bundler was restarted with `--reset-cache`.
 4. For React Navigation >= 5: confirm `NavigationContainer` is wrapped with `ConvivaNavigationContainer` (the HOC wrapper).
 5. For React Navigation < 5: confirm `AppNavigator` is wrapped with `withReactNavigationAutotrack(autocaptureNavigationTrack)`.
@@ -238,7 +238,7 @@ Checklist:
 1. Confirm the React Navigation version from `package.json`.
 2. For >= 5: `ConvivaNavigationContainer` wraps the `NavigationContainer` - not a child screen or navigator component.
 3. For < 5: `withReactNavigationAutotrack(autocaptureNavigationTrack)` wraps the result of `createAppContainer(...)`.
-4. `@babel/plugin-transform-react-display-name` is in `devDependencies` and installed; Metro was restarted with `--reset-cache`.
+4. The Conviva Babel plugin is in the `plugins` array of `babel.config.js` (for `>= 0.3.0`: `'@convivainc/conviva-react-native-appanalytics/plugin'`; for `<= 0.2.8`: `instrumentation/index.js` + `'add-react-displayname'`); Metro was restarted with `--reset-cache`.
 5. Only one `NavigationContainer` / `AppNavigator` exists in the app. If there are multiple, each must be wrapped.
 
 ---
