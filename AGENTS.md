@@ -234,7 +234,7 @@ The `ConvivaAppAnalytics` pod is declared as a dependency in `RNConvivaAppAnalyt
 
 **App type detection (from `APP_TYPE_IOS` collected in Section 3):**
 
-iOS has no equivalent of Android's `AndroidManifest.xml` that declares all screens statically. ViewControllers are created in code at runtime with no central registry. Use the `APP_TYPE_IOS` value provided by the developer as the authoritative classification.
+iOS has no equivalent of Android's `AndroidManifest.xml` that declares all screens statically. ViewControllers are created in code at runtime with no central registry. Use the `APP_TYPE_IOS` value provided by the developer as the authoritative classification. Do not infer hybrid status by scanning native source files -- the presence of `UIViewController` subclasses or `.storyboard` files in `ios/` does not indicate a hybrid app.
 
 - **Standard React Native:** Skip Steps 1a and 1b in `AGENTS-ios-setup.md` (no native `createTracker` needed). The React Native bridge initializes the tracker automatically when `createTracker(...)` is called in JavaScript.
 - **Hybrid:** Follow Steps 1a and 1b in `AGENTS-ios-setup.md` -- verify pod availability for native code and call `CATAppAnalytics.createTracker(...)` natively in `AppDelegate` so native ViewControllers are tracked before the RN bridge loads.

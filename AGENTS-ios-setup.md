@@ -26,6 +26,8 @@ Before modifying any native files, determine whether the app is standard React N
 
 Use the `APP_TYPE_IOS` value provided by the developer (AGENTS.md Section 3). Unlike Android where `AndroidManifest.xml` declares all Activities statically, iOS has no central registry of ViewControllers -- they are created in code at runtime. The developer's answer is the authoritative classification.
 
+**Do not attempt to detect hybrid status by scanning native source files.** The presence of `UIViewController` subclasses, `.storyboard` files, or native Swift/Objective-C code in the `ios/` folder does not indicate a hybrid app -- standard React Native projects contain native code in `AppDelegate`, bridge modules, and launch storyboards. Only the developer's explicit answer to the `APP_TYPE_IOS` question determines the classification. Never infer or assume hybrid status.
+
 | Classification | Signal |
 |---|---|
 | **Standard React Native** | All screens are rendered by React Native. `AppDelegate` only sets up `RCTRootView` (or `RCTBridge` + `RCTRootView`). No native UIViewControllers are presented outside the RN bridge. |
