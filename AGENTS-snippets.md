@@ -99,6 +99,52 @@ Initialize in `src/conviva.ts` and pass `tracker` as a prop to child screens tha
 
 ---
 
+## iOS Native Tracker Initialization (Hybrid Apps Only)
+
+For hybrid iOS apps with native ViewControllers, initialize the tracker natively in `AppDelegate` before the RN bridge loads. This ensures native screens are tracked from app launch.
+
+**Objective-C (`AppDelegate.m` or `AppDelegate.mm`):**
+```objc
+@import ConvivaAppAnalytics;
+
+@implementation AppDelegate
+
+- (BOOL)application:(UIApplication *)application
+    didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+
+    id<CATTrackerController> tracker = [CATAppAnalytics createTrackerWithCustomerKey:@"YOUR_CUSTOMER_KEY" appName:@"YOUR_APP_NAME"];
+
+    // ... existing RCTBridge / RCTRootView setup ...
+    return YES;
+}
+
+@end
+```
+
+**Swift (`AppDelegate.swift`):**
+```swift
+import ConvivaAppAnalytics
+
+@UIApplicationMain
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        let tracker = CATAppAnalytics.createTracker(customerKey: "YOUR_CUSTOMER_KEY", appName: "YOUR_APP_NAME")
+
+        // ... existing RCTBridge / RCTRootView setup ...
+        return true
+    }
+}
+```
+
+> **YOUR_CUSTOMER_KEY** and **YOUR_APP_NAME** must match the values used in the JavaScript `createTracker(...)` call in `src/conviva.ts`. The SDK deduplicates internally -- the second `createTracker` call from the JS bridge reuses the tracker already initialized natively.
+>
+> Use only the two-argument form. Do not pass a configuration dictionary or builder as a third argument.
+
+---
+
 ## User ID
 
 Place immediately after successful login or registration at the convergence point. Use the tracker returned from `createTracker`, or the same module-level instance.

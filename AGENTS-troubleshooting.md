@@ -170,6 +170,40 @@ Fix: Run `cd ios && pod install --repo-update`. If still failing, delete `ios/Po
 
 ---
 
+## iOS Hybrid - Native Tracker Issues
+
+**Issue: Native ViewControllers not being tracked**
+
+Symptoms: Events from React Native screens appear in Pulse, but native iOS screens (UIViewControllers) do not generate `screen_view` or other events.
+
+Checklist:
+1. Confirm `APP_TYPE_IOS` is hybrid and native `CATAppAnalytics.createTracker(...)` was added to `AppDelegate`.
+2. Confirm the `createTracker` call is **before** the `RCTBridge` / `RCTRootView` setup in `application:didFinishLaunchingWithOptions:`.
+3. Confirm `CUSTOMER_KEY` and `APP_NAME` match the values in `src/conviva.ts`.
+4. Confirm `ConvivaAppAnalytics` appears in `ios/Podfile.lock`.
+5. If using Swift: confirm `import ConvivaAppAnalytics` compiles. If not, run `pod install` again.
+6. If using Obj-C: confirm `@import ConvivaAppAnalytics;` compiles. If the module is not found, run `pod install --repo-update`.
+
+**Issue: Duplicate tracker warning or unexpected behavior**
+
+Symptoms: Console log shows warnings about duplicate tracker initialization.
+
+Cause: Both the native `createTracker` (in `AppDelegate`) and the JS `createTracker` (in `src/conviva.ts`) are called. This is expected for hybrid apps.
+
+Fix: Confirm both calls use **identical** `CUSTOMER_KEY` and `APP_NAME` values. The SDK deduplicates internally when the same key and name are used. If the values differ, the SDK may create two separate trackers, causing split user journeys.
+
+**Issue: `ConvivaAppAnalytics` module or header not found**
+
+Symptoms: Xcode build error `Module 'ConvivaAppAnalytics' not found` (Swift) or `'ConvivaAppAnalytics/ConvivaAppAnalytics.h' file not found` (Obj-C).
+
+Fix:
+1. Confirm `npx pod-install` was run after `npm install`.
+2. Confirm `ConvivaAppAnalytics` appears in `ios/Podfile.lock`.
+3. Clean Xcode build folder: Product > Clean Build Folder (Cmd+Shift+K).
+4. If still failing: delete `ios/Pods/` and `ios/Podfile.lock`, then re-run `npx pod-install`.
+
+---
+
 ## Android - Gradle Sync Failures
 
 **Issue: Gradle sync fails to resolve Conviva artifacts**
@@ -339,7 +373,7 @@ Checklist:
 2. `CUSTOMER_KEY` is the correct production or debug key from the Pulse account info page.
 3. The device / simulator has network access to Conviva backend endpoints.
 4. For Android: confirm the `conviva-android-tracker` dependency is in `android/app/build.gradle`.
-5. For iOS: confirm `npx pod-install` was run and `ConvivaAppAnalytics` appears in `ios/Podfile.lock`.
+5. For iOS: confirm `npx pod-install` was run and `ConvivaAppAnalytics` appears in `ios/Podfile.lock`. For hybrid iOS apps: confirm native `CATAppAnalytics.createTracker(...)` is called in `AppDelegate` with the same `CUSTOMER_KEY` and `APP_NAME` as the JS call.
 
 ---
 

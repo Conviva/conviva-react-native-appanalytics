@@ -51,10 +51,11 @@ Single source of truth. Governs: Cursor, Claude Code, Codex, ChatGPT, Gemini CLI
 | `ADD_DISPLAYNAME_VERSION` | **For `CONVIVA_RN_VERSION <= 0.2.8` only.** Exact version of `babel-plugin-add-react-displayname` to add to `devDependencies` in `package.json` -- never use `*`. Also add `'add-react-displayname'` to the `plugins` array explicitly. |
 | `BABEL_DISPLAY_NAME_VERSION` | **For `CONVIVA_RN_VERSION >= 0.2.9` only -- fallback only.** `@babel/plugin-transform-react-display-name` is declared as a `dependency` of the Conviva package and resolves automatically from the package's own `node_modules` -- no host project `devDependencies` entry is needed in standard npm projects. Only required explicitly if you see `[conviva] Could not resolve @babel/plugin-transform-react-display-name` (e.g. strict pnpm / Yarn PnP environments). In that case, pin the exact version here and add to `devDependencies`. |
 | `ANDROID_PLUGIN_VERSION` | Exact Android plugin version from GitHub Releases -- **never use `CONVIVA_RN_VERSION` for this** |
-| `APP_TYPE` | Whether the Android app is **standard React Native** (all screens are RN, only `MainActivity` extending `ReactActivity`) or **hybrid** (has native Android Activities in Java/Kotlin running outside the RN bridge). Ask developer: *"Does your app contain native Android Activities (Java/Kotlin) in addition to React Native screens -- for example a native splash, login, or settings screen?"* |
-| `ANDROID_TRACKER_VERSION` | *(Hybrid apps only)* Exact version of `com.conviva.sdk:conviva-android-tracker` from [GitHub Releases](https://github.com/Conviva/conviva-android-appanalytics/releases). This is a **separate artifact with its own release cycle** -- it is NOT the same as `CONVIVA_RN_VERSION`. Never reuse the npm version number here. Only required when `APP_TYPE` is hybrid. |
+| `APP_TYPE_ANDROID` | Whether the Android app is **standard React Native** (all screens are RN, only `MainActivity` extending `ReactActivity`) or **hybrid** (has native Android Activities in Java/Kotlin running outside the RN bridge). Ask developer: *"Does your app contain native Android Activities (Java/Kotlin) in addition to React Native screens -- for example a native splash, login, or settings screen?"* |
+| `ANDROID_TRACKER_VERSION` | *(Android hybrid apps only)* Exact version of `com.conviva.sdk:conviva-android-tracker` from [GitHub Releases](https://github.com/Conviva/conviva-android-appanalytics/releases). This is a **separate artifact with its own release cycle** -- it is NOT the same as `CONVIVA_RN_VERSION`. Never reuse the npm version number here. Only required when `APP_TYPE_ANDROID` is hybrid. |
+| `APP_TYPE_IOS` | Whether the iOS app is **standard React Native** (all screens are rendered by React Native; `AppDelegate` only sets up `RCTRootView`) or **hybrid** (has native iOS screens written in Swift/Objective-C that are presented outside the React Native bridge). Ask developer: *"Does your iOS app present any screens built with native UIKit (Swift or Objective-C UIViewControllers) that are not rendered by React Native? For example: a native splash screen (beyond the launch storyboard), a native login or onboarding flow, a native settings screen, or any screen built with UIKit/SwiftUI that exists alongside your React Native screens. If all your app's screens are React Native components and the only native code is the standard AppDelegate/SceneDelegate boilerplate that hosts the RCTRootView, answer No."* |
 
-Do not proceed without all required values. Also detect the React Navigation version and AGP version before writing Gradle or navigation code (see Sections 5 and 7).
+Do not proceed without all required values. Also detect the React Navigation version and AGP version before writing Gradle or navigation code (see Sections 5 and 7). For iOS hybrid apps, confirm the AppDelegate language (Obj-C vs Swift) before writing native init code (see Section 8).
 
 ---
 
@@ -72,6 +73,7 @@ Do not re-read a file already in context. If a prior tool call or subagent has a
 | `android/app/build.gradle` or `android/app/build.gradle.kts` | `plugins {}` or `apply plugin:` block; `proguardFiles` line; last ~25 lines of `dependencies {}` | Partial - first 30 lines + search for `proguardFiles` + last 25 lines |
 | `android/app/src/main/AndroidManifest.xml` | `android:name` on `<application>` tag | Partial - first 20 lines |
 | `ios/Podfile` | `platform :ios` version; existing pod entries | Full (typically < 50 lines) |
+| `ios/<AppName>/AppDelegate.m` or `AppDelegate.mm` or `AppDelegate.swift` | *(iOS hybrid only)* Detect language (Obj-C vs Swift); locate `application:didFinishLaunchingWithOptions:` method; check for existing Conviva imports or `createTracker` calls | Partial - first 50 lines + search for `didFinishLaunchingWithOptions` |
 | `app.json` or `app.config.js` | Expo project type detection (`expo` key presence; `android`/`ios` bare workflow keys) | Full (typically < 50 lines) - only if `expo` found in `package.json` |
 | `yarn.lock` | Existence only - confirms Yarn as package manager | Existence check only |
 | `pnpm-lock.yaml` | Existence only - confirms pnpm as package manager | Existence check only |
@@ -79,7 +81,7 @@ Do not re-read a file already in context. If a prior tool call or subagent has a
 
 **Package manager detection:** If `yarn.lock` exists -> use Yarn commands. If `pnpm-lock.yaml` exists -> use pnpm commands. Otherwise -> use npm commands.
 
-**Do NOT read:** native Java/Kotlin/Objective-C source files in `android/` or `ios/`, library module sources, test source sets, or any file not in the table above. Exception: auth hooks must be found regardless of which file they are in.
+**Do NOT read:** native Java/Kotlin source files in `android/` or native Objective-C/Swift source files in `ios/` -- **except** `AppDelegate` (for iOS hybrid detection, see Section 8) and the Android Application class (for Android hybrid detection, see Section 7). Do not read library module sources, test source sets, or any file not in the table above. Exception: auth hooks must be found regardless of which file they are in.
 
 ---
 
@@ -207,9 +209,9 @@ Before reading `AGENTS-android-setup.md`, confirm the Gradle DSL style using the
 
 This determines which Gradle instructions to follow in `AGENTS-android-setup.md` Steps 3 and 4.
 
-**App type detection (from `APP_TYPE` collected in Section 3):**
+**App type detection (from `APP_TYPE_ANDROID` collected in Section 3):**
 
-`AGENTS-android-setup.md` Step 1 determines whether the app is standard React Native or hybrid by inspecting `android/app/src/main/AndroidManifest.xml`. Use the `APP_TYPE` value already collected in Section 3 as the starting classification; confirm by reading the Manifest.
+`AGENTS-android-setup.md` Step 1 determines whether the app is standard React Native or hybrid by inspecting `android/app/src/main/AndroidManifest.xml`. Use the `APP_TYPE_ANDROID` value already collected in Section 3 as the starting classification; confirm by reading the Manifest.
 
 - **Standard React Native:** Skip Steps 1a and 1b in `AGENTS-android-setup.md` (no tracker dependency, no native `createTracker` needed).
 - **Hybrid:** Follow Steps 1a and 1b -- add `conviva-android-tracker` at `ANDROID_TRACKER_VERSION` and call `ConvivaAppAnalytics.createTracker(...)` in the Application class.
@@ -222,11 +224,20 @@ Find AGP version via `com.android.tools.build:gradle:` or `id("com.android.appli
 
 ## 8. iOS Native Setup
 
-Read `AGENTS-ios-setup.md` for all iOS CocoaPods integration steps.
+Skip this section if Expo managed workflow was detected in Section 3d (no `ios/` folder exists).
+
+Read `AGENTS-ios-setup.md` for all iOS CocoaPods and native integration steps.
 
 The `ConvivaAppAnalytics` pod is declared as a dependency in `RNConvivaAppAnalytics.podspec` and is auto-linked when `npx pod-install` runs. No manual Podfile edits are required for the core SDK. Verify only that the `platform :ios` version in `ios/Podfile` is >= `'9.0'`.
 
-`AGENTS-ios-setup.md` also includes the mandatory Info.plist configuration for runtime stability in multi-SDK integrations (Step 4). Apply that step regardless of how many other SDKs are present -- it is a safe, low-cost setting with no negative side effects.
+`AGENTS-ios-setup.md` also includes the mandatory Info.plist configuration for runtime stability in multi-SDK integrations (Step 5). Apply that step regardless of how many other SDKs are present -- it is a safe, low-cost setting with no negative side effects.
+
+**App type detection (from `APP_TYPE_IOS` collected in Section 3):**
+
+iOS has no equivalent of Android's `AndroidManifest.xml` that declares all screens statically. ViewControllers are created in code at runtime with no central registry. Use the `APP_TYPE_IOS` value provided by the developer as the authoritative classification.
+
+- **Standard React Native:** Skip Steps 1a and 1b in `AGENTS-ios-setup.md` (no native `createTracker` needed). The React Native bridge initializes the tracker automatically when `createTracker(...)` is called in JavaScript.
+- **Hybrid:** Follow Steps 1a and 1b in `AGENTS-ios-setup.md` -- verify pod availability for native code and call `CATAppAnalytics.createTracker(...)` natively in `AppDelegate` so native ViewControllers are tracked before the RN bridge loads.
 
 ---
 
@@ -459,7 +470,7 @@ Seed your task list from this table before writing any code. Every row must appe
 | package.json entry | `@convivainc/conviva-react-native-appanalytics` added to `dependencies` in `package.json` at exact `CONVIVA_RN_VERSION`; install command listed for developer to run manually (not executed by agent) |
 | pod-install | `npx pod-install` listed for developer to run manually; iOS platform version >= 9.0 confirmed; or skipped with reason if Expo managed workflow |
 | Android native setup | Detected Gradle DSL style (buildscript or plugins DSL); **app type detected** (standard React Native or hybrid); if hybrid: `conviva-android-tracker` dependency added at `ANDROID_TRACKER_VERSION` (confirmed separate from `CONVIVA_RN_VERSION`) + native `ConvivaAppAnalytics.createTracker(...)` placed in Application class (or MAIN/LAUNCHER Activity); if standard React Native: tracker dependency and native init skipped; plugin classpath + apply added at `ANDROID_PLUGIN_VERSION`; ProGuard rules appended; AGP version detected; or skipped with reason if Expo managed workflow |
-| iOS native setup | Pod auto-linked via podspec; no manual Podfile changes needed (or note any exceptions); `CATGeneratedClassDisposeDisabled` set to `YES` in `Info.plist`; or skipped with reason if Expo managed workflow |
+| iOS native setup | Pod auto-linked via podspec; no manual Podfile changes needed (or note any exceptions); **app type detected** (standard React Native or hybrid); if hybrid: native `CATAppAnalytics.createTracker(...)` placed in `AppDelegate` `application:didFinishLaunchingWithOptions:` (Obj-C or Swift snippet used based on detected language); if standard React Native: native init skipped; `CATGeneratedClassDisposeDisabled` set to `YES` in `Info.plist`; or skipped with reason if Expo managed workflow |
 | Babel plugin | **For CONVIVA_RN_VERSION <= 0.2.8:** `./node_modules/@convivainc/conviva-react-native-appanalytics/instrumentation/index.js` and `add-react-displayname` added to `plugins`; `babel-plugin-add-react-displayname` added to `devDependencies` at exact `ADD_DISPLAYNAME_VERSION`; `babel-types` and `babel-template` presence confirmed in `dependencies` or `devDependencies` at a `6.x` version -- added to `devDependencies` at `^6.26.0` if absent, not duplicated if already present (legacy Babel 6 packages required by `instrumentation/index.js` -- not installed automatically in Babel 7 projects). **For CONVIVA_RN_VERSION >= 0.2.9:** `'@convivainc/conviva-react-native-appanalytics/plugin'` added to `plugins` in `babel.config.js`; `@babel/plugin-transform-react-display-name` added to `devDependencies` at exact `BABEL_DISPLAY_NAME_VERSION` (must be installed -- bundled plugin resolves it from host project); NOT added to `plugins` array |
 | React Navigation version | Detected version; wrapping approach applied (v5+ or below v5); or "not present" |
 | Initialization placement | `src/conviva.ts` (or `.js`) created; `createTracker` called at module level and tracker exported; root component side-effect imports it with `import './conviva'`; path alias used for cross-file tracker imports if available |
