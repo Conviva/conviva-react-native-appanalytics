@@ -20,5 +20,5 @@ Pod::Spec.new do |s|
   s.requires_arc = true
 
   s.dependency "React-Core"
-  s.dependency "ConvivaAppAnalytics", "1.10.1"
+  s.dependency "ConvivaAppAnalytics", "1.10.2"
 end

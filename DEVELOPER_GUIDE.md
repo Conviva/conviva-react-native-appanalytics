@@ -207,13 +207,13 @@ const tracker: ReactNativeTracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP
 > **YOUR_CUSTOMER_KEY** - A string to identify your Conviva account. Use separate keys for debug and production. Find your keys on the Pulse account info page.
 > **YOUR_APP_NAME** - A string value that uniquely identifies your app across platforms.
 
-### 5. Babel Plugin Setup (Button Click and Screen View Auto-detection)
+### 5. Babel Plugin Setup (Button Clicks and `displayName` Auto-detection)
 
 The required Babel configuration depends on your installed version of `@convivainc/conviva-react-native-appanalytics`. Check the version in your `package.json`.
 
-#### For version < 0.2.8
+#### For version <= 0.2.8
 
-Add two separate plugins to your `babel.config.js` -- one for button click auto-detection and one for screen view display name injection:
+Add two separate plugins to your `babel.config.js` -- one for button click auto-detection and one for `displayName` injection:
 
 **`babel.config.js`:**
 ```js
@@ -226,15 +226,21 @@ module.exports = {
 };
 ```
 
-Add `add-react-displayname` to `devDependencies` in `package.json`:
+Add the following to `devDependencies` in `package.json`:
 ```json
-"add-react-displayname": "latest"
+"babel-plugin-add-react-displayname": "0.0.5",
+"babel-types": "^6.26.0",
+"babel-template": "^6.26.0"
 ```
+
+- `babel-plugin-add-react-displayname` `0.0.5` is the final published version of the package.
+- `babel-types` and `babel-template` at `^6.26.0` are required by `instrumentation/index.js`; they are legacy Babel 6 packages not installed automatically in Babel 7 projects.
+
 Then run `npm install` (or `yarn`) from the project root.
 
-#### For version >= 0.2.9
+#### For version >= 0.3.0
 
-A single unified Conviva plugin handles both button click auto-detection and screen view display name injection:
+A single unified Conviva plugin handles both button click auto-detection and `displayName` injection. **No extra dependencies are needed in the app.**
 
 **`babel.config.js`:**
 ```js
@@ -246,13 +252,7 @@ module.exports = {
 };
 ```
 
-Display name injection for Screen View auto-detection is bundled inside the Conviva plugin -- do NOT add `@babel/plugin-transform-react-display-name` to the `plugins` array in `babel.config.js`.
-
-However, it **must** be present in `devDependencies` in `package.json`, because the bundled plugin resolves it from your project's `node_modules` at build time:
-```json
-"@babel/plugin-transform-react-display-name": "<exact-version>"
-```
-Then run `npm install` (or `yarn`) from the project root.
+`displayName` auto-detection is absorbed internally by the Conviva plugin. Do **not** add `add-react-displayname`, `babel-plugin-add-react-displayname`, or `@babel/plugin-transform-react-display-name` to `plugins` or `devDependencies`.
 
 ---
 
@@ -357,6 +357,45 @@ tracker.trackCustomEvent('custom_event_name', {
   tagKey1: 'tagValue1',
   tagKey2: 100,
   tagKey3: true,
+});
+```
+
+### Track Revenue Events (>= 0.2.8)
+
+Use `trackRevenueEvent()` to track purchase and revenue events.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `totalOrderAmount` | `number` | Yes | Total order amount |
+| `transactionId` | `string` | Yes | Unique transaction identifier |
+| `currency` | `string` | Yes | Currency code (e.g. `"USD"`) |
+| `taxAmount` | `number` | No | Tax amount |
+| `shippingCost` | `number` | No | Shipping cost |
+| `discount` | `number` | No | Order-level discount amount |
+| `cartSize` | `number` | No | Number of items in the cart |
+| `paymentMethod` | `string` | No | Payment method used |
+| `paymentProvider` | `string` | No | Payment provider name |
+| `items` | `RevenueEventItemProps[]` | No | Array of purchased items |
+| `extraMetadata` | `object` | No | Any additional key-value pairs |
+
+Each item in `items` may include: `productId`, `name`, `sku`, `category`, `unitPrice`, `quantity`, `discount`, `brand`, `variant`, `extraMetadata`.
+
+```js
+tracker.trackRevenueEvent({
+  totalOrderAmount: 49.99,
+  transactionId: 'txn-001',
+  currency: 'USD',
+  taxAmount: 4.50,
+  shippingCost: 5.99,
+  paymentMethod: 'credit_card',
+  items: [
+    {
+      productId: 'prod-123',
+      name: 'Widget',
+      unitPrice: 19.99,
+      quantity: 2,
+    },
+  ],
 });
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "@convivainc/conviva-react-native-appanalytics",
-  "version": "0.2.8",
+  "version": "0.3.0",
   "description": "Conviva React Native Application Analytics Library",
   "main": "conviva-react-native-appanalytics.js",
   "repository": {
@@ -8,8 +8,10 @@
     "url": "git+github.com:Conviva/conviva-react-native-appanalytics.git"
   },
   "dependencies": {
+    "@babel/plugin-transform-react-display-name": "^7.0.0",
     "hoist-non-react-statics": "^3.3.2",
-    "lodash": "^4.17.21"
+    "lodash": "^4.17.21",
+    "tslib": "^2.6.0"
   },
   "keywords": [
     "Conviva",
