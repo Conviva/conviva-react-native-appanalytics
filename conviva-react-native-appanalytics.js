@@ -2077,7 +2077,7 @@ class NavigationUtil {
     }
 }
 
-const version = "0.3.0";
+const version = "0.3.1";
 
 const { Platform } = require('react-native');
 let reactNativeVersionString = null;
