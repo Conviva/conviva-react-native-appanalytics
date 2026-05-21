@@ -1,5 +1,9 @@
 
 # Changelog
+
+## 0.3.1 (04/May/2025)
+- Using latest android(v1.3.2) and ios(v1.11.0) native packages.
+
 ## 0.3.0 (14/Apr/2026)
 - Babel plugin simplified to `@convivainc/conviva-react-native-appanalytics/plugin`; app-level `babel-types` and `babel-template` dependencies no longer needed.
 - `add-react-displayname` plugin no longer needed; absorbed internally by the Conviva plugin.
