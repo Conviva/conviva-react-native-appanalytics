@@ -32,6 +32,9 @@
 #import <ConvivaAppAnalytics/CATSubjectConfiguration.h>
 #import <ConvivaAppAnalytics/CATGDPRConfiguration.h>
 #import <ConvivaAppAnalytics/CATGlobalContextsConfiguration.h>
+#if !TARGET_OS_TV
+#import <ConvivaAppAnalytics/CATClientIdSyncConfiguration.h>
+#endif
 #import <ConvivaAppAnalytics/CATGlobalContext.h>
 #import <ConvivaAppAnalytics/CATSelfDescribingJson.h>
 #import <ConvivaAppAnalytics/CATSelfDescribing.h>
@@ -139,7 +142,36 @@ RCT_EXPORT_METHOD(createTracker:
         CATGlobalContextsConfiguration *gcConfiguration = [RNConfigUtils mkGCConfig:(NSArray *)gcArg];
         [controllers addObject:gcConfiguration];
     }
-    
+
+    // ClidSyncConfiguration
+    // The factory is exception-safe and always returns a non-nil object, but
+    // we still gate on dictionary type here so we only enqueue a controller
+    // when JS actually supplied `clidSyncConfig` — leaving the SDK on its
+    // own defaults otherwise.
+    // tvOS: the underlying SDK gates CATClientIdSyncConfiguration to
+    // SNOWPLOW_TARGET_IOS (i.e. the type does not exist on tvOS), so the
+    // entire block is compiled out there to keep the wrapper tvOS-buildable.
+    // JS may still send `clidSyncConfig` on tvOS — it is silently dropped
+    // here, which mirrors the SDK contract that the feature is iOS-only.
+#if !TARGET_OS_TV
+    NSObject *clidSyncArg = [argmap objectForKey:@"clidSyncConfig"];
+    if (clidSyncArg != nil && [clidSyncArg isKindOfClass:NSDictionary.class]) {
+        @try {
+            CATClientIdSyncConfiguration *clidSyncConfiguration =
+                [RNConfigUtils mkClidSyncConfig:(NSDictionary *)clidSyncArg];
+            if (clidSyncConfiguration != nil) {
+                [controllers addObject:clidSyncConfiguration];
+            }
+        } @catch (NSException *exception) {
+            // Belt-and-braces: even though mkClidSyncConfig: catches its own
+            // parsing exceptions, we wrap the call site too so any unexpected
+            // failure here never aborts createTracker:. The tracker will still
+            // be created using whatever configurations are already queued.
+            NSLog(@"[RNConvivaAppAnalytics] createTracker: ignoring exception while building clidSyncConfig: %@", exception);
+        }
+    }
+#endif
+
     id<CATTrackerController> tracker = nil;
     if(nil != networkConfiguration){
         tracker = [CATAppAnalytics createTrackerWithCustomerKey:customerKey

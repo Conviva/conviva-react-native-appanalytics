@@ -26,6 +26,12 @@
 #import <ConvivaAppAnalytics/CATSubjectConfiguration.h>
 #import <ConvivaAppAnalytics/CATGDPRConfiguration.h>
 #import <ConvivaAppAnalytics/CATGlobalContextsConfiguration.h>
+#if !TARGET_OS_TV
+// CATClientIdSyncConfiguration is gated to SNOWPLOW_TARGET_IOS in the SDK,
+// so it is not declared on tvOS. Mirror that here to keep the wrapper
+// tvOS-buildable; the +mkClidSyncConfig: factory is gated identically.
+#import <ConvivaAppAnalytics/CATClientIdSyncConfiguration.h>
+#endif
 
 @interface RNConfigUtils : NSObject
 
@@ -42,5 +48,9 @@
 + (CATGDPRConfiguration *) mkGdprConfig:(NSDictionary *) gdprConfig;
 
 + (CATGlobalContextsConfiguration *) mkGCConfig:(NSArray *) gcConfig;
+
+#if !TARGET_OS_TV
++ (CATClientIdSyncConfiguration *) mkClidSyncConfig:(NSDictionary *) clidSyncConfig;
+#endif
 
 @end

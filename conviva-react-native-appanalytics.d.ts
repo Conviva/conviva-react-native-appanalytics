@@ -77,6 +77,28 @@ interface TraceparentConfiguration {
     targetUrl: string[];
 }
 /**
+ * ClidSyncConfiguration
+ *
+ * Mirrors the remote-config clid_sync JSON structure.
+ * App-supplied domains under webViewCookie.domains are used immediately as fallback;
+ * remote config replaces them once received.
+ * Note: webViewCookie.en and webViewBridge.en are controlled by remote config only and
+ * are ignored when supplied here.
+ */
+interface ClidSyncConfiguration {
+    webViewCookie?: {
+        enabled?: boolean;
+        /**
+         * List of cookie domains to receive the Conviva_sdkConfig cookie.
+         * Use leading-dot form (e.g. ".example.com") for subdomain coverage.
+         */
+        domains?: string[];
+    };
+    webViewBridge?: {
+        enabled?: boolean;
+    };
+}
+/**
  * TrackerConfiguration
  */
 interface TrackerConfiguration {
@@ -317,6 +339,7 @@ interface TrackerControllerConfiguration {
     gdprConfig?: GdprConfiguration;
     gcConfig?: GCConfiguration;
     remoteConfig?: RemoteConfiguration;
+    clidSyncConfig?: ClidSyncConfiguration;
 }
 /**
  * ScreenView event properties

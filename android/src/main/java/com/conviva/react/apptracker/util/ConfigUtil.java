@@ -6,6 +6,7 @@ import com.conviva.apptracker.configuration.GlobalContextsConfiguration;
 import com.conviva.apptracker.configuration.SessionConfiguration;
 import com.conviva.apptracker.configuration.SubjectConfiguration;
 import com.conviva.apptracker.configuration.TrackerConfiguration;
+import com.conviva.apptracker.internal.tracker.ClidSyncConfiguration;
 import com.conviva.apptracker.emitter.BufferOption;
 import com.conviva.apptracker.globalcontexts.GlobalContext;
 import com.conviva.apptracker.payload.SelfDescribingJson;
@@ -315,6 +316,22 @@ public class ConfigUtil {
                 docDesc);
 
         return gdprConfiguration;
+    }
+
+    public static ClidSyncConfiguration mkClidSyncConfiguration(ReadableMap clidSyncConfig) {
+        ClidSyncConfiguration config = new ClidSyncConfiguration();
+        if (clidSyncConfig.hasKey("webViewCookie") && !clidSyncConfig.isNull("webViewCookie")) {
+            ReadableMap wvCke = clidSyncConfig.getMap("webViewCookie");
+            if (wvCke != null && wvCke.hasKey("domains") && !wvCke.isNull("domains")) {
+                ReadableArray domainsArray = wvCke.getArray("domains");
+                List<String> domains = new ArrayList<>();
+                for (int i = 0; i < domainsArray.size(); i++) {
+                    domains.add(domainsArray.getString(i));
+                }
+                config.domains(domains);
+            }
+        }
+        return config;
     }
 
     public static GlobalContextsConfiguration mkGCConfiguration(ReadableArray gcConfig) {

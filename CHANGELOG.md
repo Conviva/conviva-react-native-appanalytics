@@ -1,6 +1,10 @@
 
 # Changelog
 
+## 0.4.0 (22/May/2025)
+- Adds automatic client ID synchronization to in-app WebViews for RN 0.68+ with react-native-webview v11+, enabling unified user identity across native and web surfaces without developer code changes.
+- Using latest android(v1.4.0) and ios(v1.12.0) native packages.
+
 ## 0.3.1 (04/May/2025)
 - Using latest android(v1.3.2) and ios(v1.11.0) native packages.
 

@@ -114,6 +114,7 @@ const logMessages = {
     gdpr: 'gdprConfig is invalid',
     gc: 'gcConfig is invalid',
     remote: 'remoteConfig is invalid',
+    clidSync: 'clidSyncConfig is invalid',
     // event errors
     context: 'invalid contexts parameter',
     selfDesc: 'selfDescribing event requires schema and data parameters to be set',
@@ -537,6 +538,10 @@ const remoteProps = [
     'endpoint',
     'method'
 ];
+const clidSyncProps = [
+    'webViewCookie',
+    'webViewBridge'
+];
 /**
  * Validates whether an object is of valid configuration given its default keys
  *
@@ -678,6 +683,29 @@ function isValidGCConf(config) {
     return true;
 }
 /**
+ * Validates the ClidSyncConfig
+ *
+ * @param config {Object} - the config to validate
+ * @returns - boolean
+ */
+function isValidClidSyncConf(config) {
+    if (!isObject(config) || !isValidConfig(config, clidSyncProps)) {
+        return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(config, 'webViewCookie') && config.webViewCookie != null) {
+        if (!isObject(config.webViewCookie)) {
+            return false;
+        }
+        if (Object.prototype.hasOwnProperty.call(config.webViewCookie, 'domains')
+            && config.webViewCookie.domains != null
+            && (!Array.isArray(config.webViewCookie.domains)
+                || !config.webViewCookie.domains.every(d => typeof d === 'string'))) {
+            return false;
+        }
+    }
+    return true;
+}
+/**
  * Validates the RemoteConfig (remote config)
  *
  * @param config {Object} - the config to validate
@@ -736,6 +764,10 @@ function initValidate(init) {
     if (Object.prototype.hasOwnProperty.call(init, 'remoteConfig')
         && !isValidRemoteConf(init.remoteConfig)) {
         return Promise.reject(new Error(logMessages.remote));
+    }
+    if (Object.prototype.hasOwnProperty.call(init, 'clidSyncConfig')
+        && !isValidClidSyncConf(init.clidSyncConfig)) {
+        return Promise.reject(new Error(logMessages.clidSync));
     }
     return Promise.resolve(true);
 }
@@ -2077,7 +2109,7 @@ class NavigationUtil {
     }
 }
 
-const version = "0.3.1";
+const version = "0.4.0";
 
 const { Platform } = require('react-native');
 let reactNativeVersionString = null;

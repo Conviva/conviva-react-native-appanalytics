@@ -34,6 +34,15 @@
 #import <ConvivaAppAnalytics/CATSubjectConfiguration.h>
 #import <ConvivaAppAnalytics/CATGDPRConfiguration.h>
 #import <ConvivaAppAnalytics/CATGlobalContextsConfiguration.h>
+#if !TARGET_OS_TV
+// All three clid-sync types are gated to SNOWPLOW_TARGET_IOS in the SDK,
+// so they are not declared on tvOS. Mirror that gating here to keep the
+// wrapper tvOS-buildable; the +mkClidSyncConfig: implementation below is
+// gated identically.
+#import <ConvivaAppAnalytics/CATClientIdSyncConfiguration.h>
+#import <ConvivaAppAnalytics/CATWebViewCookieConfiguration.h>
+#import <ConvivaAppAnalytics/CATWebViewBridgeConfiguration.h>
+#endif
 
 @implementation RNConfigUtils
 
@@ -213,5 +222,75 @@
 
     return gcConfiguration;
 }
+
+#if !TARGET_OS_TV
+// CATClientIdSyncConfiguration (and its wvCke / wvBrdg sub-configs) are gated
+// to SNOWPLOW_TARGET_IOS in the SDK and therefore do not exist on tvOS.
+// Compiling this factory only on non-tvOS platforms keeps the wrapper
+// tvOS-buildable; the lone caller (createTracker:) is gated identically.
++ (CATClientIdSyncConfiguration *) mkClidSyncConfig:(NSDictionary *) clidSyncConfig {
+    // Public init mirrors what a native iOS consumer would do:
+    //   - wvCke / wvBrdg are non-nil sub-configs
+    //   - parent wvCkePresent / wvBrdgPresent = YES (app-authoritative)
+    //   - wvCke.en  = YES, wvCke.enPresent  = YES, wvCke.domains = @[]
+    //   - wvBrdg.en = YES, wvBrdg.enPresent = YES
+    // We then mutate ONLY the fields the JS payload actually supplied, so the
+    // resulting object is indistinguishable from one a native host app would
+    // build via [[CATClientIdSyncConfiguration alloc] init] + property setters.
+    CATClientIdSyncConfiguration *config = [[CATClientIdSyncConfiguration alloc] init];
+
+    if (clidSyncConfig == nil || ![clidSyncConfig isKindOfClass:NSDictionary.class]) {
+        return config;
+    }
+
+    @try {
+        NSObject *wvCkeArg = [clidSyncConfig objectForKey:@"webViewCookie"];
+        if (wvCkeArg != nil && [wvCkeArg isKindOfClass:NSDictionary.class]) {
+            NSDictionary *wvCke = (NSDictionary *)wvCkeArg;
+
+            // Use rncat_numberForKey: (not rncat_boolForKey:) so we can
+            // distinguish "field absent" (nil) from "field set to false"
+            // (NSNumber @NO). Only assign when JS actually supplied the field.
+            NSNumber *cookieEnabled = [wvCke rncat_numberForKey:@"enabled" defaultValue:nil];
+            if (cookieEnabled != nil && config.wvCke != nil) {
+                config.wvCke.en = cookieEnabled.boolValue;
+            }
+
+            NSObject *domainsArg = [wvCke objectForKey:@"domains"];
+            if (domainsArg != nil && [domainsArg isKindOfClass:NSArray.class] && config.wvCke != nil) {
+                NSArray *raw = (NSArray *)domainsArg;
+                NSMutableArray<NSString *> *domains = [NSMutableArray arrayWithCapacity:raw.count];
+                for (id item in raw) {
+                    // JS validates `every(d => typeof d === 'string')`, but
+                    // we filter again defensively so a malformed entry never
+                    // reaches the SDK.
+                    if ([item isKindOfClass:NSString.class]) {
+                        [domains addObject:(NSString *)item];
+                    }
+                }
+                config.wvCke.domains = [domains copy];
+            }
+        }
+
+        NSObject *wvBrdgArg = [clidSyncConfig objectForKey:@"webViewBridge"];
+        if (wvBrdgArg != nil && [wvBrdgArg isKindOfClass:NSDictionary.class]) {
+            NSDictionary *wvBrdg = (NSDictionary *)wvBrdgArg;
+
+            NSNumber *bridgeEnabled = [wvBrdg rncat_numberForKey:@"enabled" defaultValue:nil];
+            if (bridgeEnabled != nil && config.wvBrdg != nil) {
+                config.wvBrdg.en = bridgeEnabled.boolValue;
+            }
+        }
+    } @catch (NSException *exception) {
+        // Never let a malformed JS payload crash createTracker. Falling back
+        // to the default-init config keeps the SDK in its safest state and
+        // matches the behaviour as if `clidSyncConfig: {}` had been supplied.
+        NSLog(@"[RNConvivaAppAnalytics] mkClidSyncConfig: ignoring exception while parsing clidSyncConfig: %@", exception);
+        config = [[CATClientIdSyncConfiguration alloc] init];
+    }
+
+    return config;
+}
+#endif
 
 @end

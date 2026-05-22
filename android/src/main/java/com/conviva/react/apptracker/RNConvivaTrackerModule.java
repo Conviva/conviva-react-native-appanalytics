@@ -11,6 +11,7 @@ import com.conviva.apptracker.configuration.SessionConfiguration;
 import com.conviva.apptracker.configuration.SubjectConfiguration;
 import com.conviva.apptracker.configuration.TrackerConfiguration;
 import com.conviva.apptracker.controller.TrackerController;
+import com.conviva.apptracker.internal.tracker.ClidSyncConfiguration;
 import com.conviva.apptracker.event.ButtonClick;
 import com.conviva.apptracker.event.ConsentGranted;
 import com.conviva.apptracker.revenue.ConvivaRevenueEvent;
@@ -182,6 +183,13 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
                 ReadableArray gcConfig = argmap.getArray("gcConfig");
                 GlobalContextsConfiguration gcConfiguration = ConfigUtil.mkGCConfiguration(gcConfig);
                 controllers.add(gcConfiguration);
+            }
+
+            // ClidSyncConfiguration
+            if (argmap.hasKey("clidSyncConfig")) {
+                ReadableMap clidSyncConfig = argmap.getMap("clidSyncConfig");
+                ClidSyncConfiguration clidSyncConfiguration = ConfigUtil.mkClidSyncConfiguration(clidSyncConfig);
+                controllers.add(clidSyncConfiguration);
             }
 
             String remoteConfigUrl = RemoteConfiguration.DEFAULT_ENDPOINT;
