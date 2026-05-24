@@ -7,7 +7,7 @@ Single source of truth. Governs: Cursor, Claude Code, Codex, ChatGPT, Gemini CLI
 1. State: "I have read AGENTS.md and will follow its contract."
 2. Ask developer for all inputs in Section 3 before writing any code.
 3. Seed task list from Section 17 before writing any code.
-4. Execute Sections 4-16 in order. Every Section 17 row must appear in your response.
+4. Execute Sections 4-17 in order. Every Section 18 row must appear in your response.
 5. If you cannot proceed without violating a rule, stop and ask.
 
 ---
@@ -454,7 +454,25 @@ Use `tracker.trackPageView({pageUrl, pageTitle?, referrer?})` to track in-app pa
 
 ---
 
-## 16. Build and Validation
+## 16. WebView Client ID Sync (Optional)
+
+Implement **only when the developer explicitly requests** linking native and in-app WebView sessions under the same user identity. Skip this section entirely if the developer has not asked for it.
+
+**How it works:** The SDK automatically shares the native client ID with in-app WebViews via two mechanisms:
+- **Cookie (primary):** Seeds a `Conviva_sdkConfig` cookie into the WebView for each configured domain. The Conviva Web SDK reads it on page load.
+- **JS bridge (fallback):** When the cookie is unavailable, the Web SDK calls the native bridge to retrieve the client ID. The bridge interface differs by platform: **Android** uses `window.__ConvivaNativeWebInterface.getClientId()`; **iOS** uses `window.webkit.messageHandlers.__ConvivaiOSGetClientIdInterface`. Requires **Conviva Web SDK ≥ 2.2.0** and JavaScript enabled in the WebView.
+
+**No code changes are required** if domains are managed via Conviva remote config — contact Conviva support to configure domains remotely.
+
+**To seed cookies immediately at launch** (before remote config loads), pass `clidSyncConfig` to `createTracker` in `src/conviva.ts` / `src/conviva.js`. See **AGENTS-snippets.md § WebView Client ID Sync** for the code example.
+
+> **Domain format:** Use leading-dot domains (`.example.com`) to cover all subdomains. Match the `domains` list in app code with the remote config list to avoid gaps on first launch.
+>
+> **Note:** The `enabled` flags inside `webViewCookie` and `webViewBridge` are remote-config controlled — local values are ignored. Only `domains` is respected from app code.
+
+---
+
+## 17. Build and Validation
 
 **Build verification:** Ask developer to run both Android and iOS debug builds. Share any error output and fix using only Section 13 allowed symbols.
 
@@ -467,7 +485,7 @@ If Metro bundler errors occur, read `AGENTS-troubleshooting.md`.
 
 ---
 
-## 17. Mandatory Checklist
+## 18. Mandatory Checklist
 
 Seed your task list from this table before writing any code. Every row must appear in your final response.
 

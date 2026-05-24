@@ -633,3 +633,55 @@ try {
   console.error(error);
 }
 ```
+
+---
+
+## WebView Client ID Sync (Optional)
+
+Pass `clidSyncConfig` to `createTracker` only when the developer explicitly requests linking native and in-app WebView sessions. Omit this config entirely if not requested.
+
+**`src/conviva.ts` (TypeScript):**
+```ts
+import { createTracker, ReactNativeTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+let tracker: ReactNativeTracker | undefined;
+try {
+  tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+    clidSyncConfig: {
+      webViewCookie: {
+        domains: ['.example.com', '.partner.com'], // leading-dot covers all subdomains
+      },
+    },
+  });
+  if (!tracker) {
+    console.error('Tracker initialization returned null');
+  }
+} catch (error) {
+  console.error(error);
+}
+export { tracker };
+```
+
+**`src/conviva.js` (JavaScript):**
+```js
+import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+let tracker;
+try {
+  tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+    clidSyncConfig: {
+      webViewCookie: {
+        domains: ['.example.com', '.partner.com'], // leading-dot covers all subdomains
+      },
+    },
+  });
+  if (!tracker) {
+    console.error('Tracker initialization returned null');
+  }
+} catch (error) {
+  console.error(error);
+}
+export { tracker };
+```
+
+> Replace `.example.com` and `.partner.com` with the actual domains hosting the in-app WebView content. Use the same domain list in Conviva remote config to ensure uninterrupted client ID sharing from the very first WebView load.
