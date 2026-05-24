@@ -617,6 +617,10 @@ try {
 
 ## Client ID (Optional)
 
+> **Prefer automatic sync for `react-native-webview`.** If the app uses `react-native-webview` v11+, use `clidSyncConfig` in `createTracker` (see **§ WebView Client ID Sync** below) — it handles cookie seeding and JS bridge automatically with no manual code.
+>
+> Use `getClientId()` / `setClientId()` only for surfaces automatic sync cannot reach, or when managing the client ID for your own backend purposes.
+
 ```js
 import { getClientId, setClientId } from '@convivainc/conviva-react-native-appanalytics';
 

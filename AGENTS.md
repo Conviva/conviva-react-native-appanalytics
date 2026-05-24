@@ -456,19 +456,55 @@ Use `tracker.trackPageView({pageUrl, pageTitle?, referrer?})` to track in-app pa
 
 ## 16. WebView Client ID Sync (Optional)
 
-Implement **only when the developer explicitly requests** linking native and in-app WebView sessions under the same user identity. Skip this section entirely if the developer has not asked for it.
+**Step 1 — Detect WebView usage (from Section 3a scan results, no re-read needed):**
 
-**How it works:** The SDK automatically shares the native client ID with in-app WebViews via two mechanisms:
-- **Cookie (primary):** Seeds a `Conviva_sdkConfig` cookie into the WebView for each configured domain. The Conviva Web SDK reads it on page load.
-- **JS bridge (fallback):** When the cookie is unavailable, the Web SDK calls the native bridge to retrieve the client ID. The bridge interface differs by platform: **Android** uses `window.__ConvivaNativeWebInterface.getClientId()`; **iOS** uses `window.webkit.messageHandlers.__ConvivaiOSGetClientIdInterface`. Requires **Conviva Web SDK ≥ 2.2.0** and JavaScript enabled in the WebView.
+Check `package.json` for `react-native-webview` in `dependencies` or `devDependencies`.
 
-**No code changes are required** if domains are managed via Conviva remote config — contact Conviva support to configure domains remotely.
+| Result | Action |
+|---|---|
+| Not found | Skip this section. Record in Section 18: "WebView CLID sync: skipped — `react-native-webview` not found." |
+| Found at version < 11 | Skip this section. Record in Section 18: "WebView CLID sync: skipped — `react-native-webview` v11+ required (found vX)." |
+| Found at version >= 11 | Continue to Step 2. |
 
-**To seed cookies immediately at launch** (before remote config loads), pass `clidSyncConfig` to `createTracker` in `src/conviva.ts` / `src/conviva.js`. See **AGENTS-snippets.md § WebView Client ID Sync** for the code example.
+---
 
-> **Domain format:** Use leading-dot domains (`.example.com`) to cover all subdomains. Match the `domains` list in app code with the remote config list to avoid gaps on first launch.
+**Step 2 — Ask the developer:**
+
+> "Your app uses `react-native-webview`. Do you want Conviva to track native and in-app WebView sessions as a single user identity — so a user's journey is continuous across native screens and web content?"
 >
-> **Note:** The `enabled` flags inside `webViewCookie` and `webViewBridge` are remote-config controlled — local values are ignored. Only `domains` is respected from app code.
+> - **Yes** → continue to Step 3.
+> - **No / Skip** → record in Section 18: "WebView CLID sync: skipped by developer." Move to Section 17.
+
+---
+
+**Step 3 — Ask for domains:**
+
+> "What domains does your WebView load? (e.g. `app.example.com`, `checkout.partner.com`)
+>
+> Providing domains seeds cookies immediately at launch, before remote config loads. You can skip this if you prefer to manage all domains via Conviva remote config — contact Conviva support in that case."
+
+| Response | Action |
+|---|---|
+| No domains provided / skip | No code changes. Record in Section 18: "WebView CLID sync: enabled — domains via remote config only." Move to Section 17. |
+| Domains provided | Continue to Step 4. |
+
+---
+
+**Step 4 — Add `clidSyncConfig` to `createTracker`:**
+
+Prefix each domain with a leading dot for subdomain coverage. Edit `src/conviva.ts` (or `src/conviva.js`) to pass `clidSyncConfig` as the third argument to `createTracker`. See **AGENTS-snippets.md § WebView Client ID Sync** for the exact snippet.
+
+> **Note:** The `enabled` flags inside `webViewCookie` and `webViewBridge` are remote-config controlled — local values are ignored. Only `domains` is respected from app code. Match the domain list here with the remote config list to avoid gaps on first launch.
+
+Record in Section 18: "WebView CLID sync: configured with domains [list domains]."
+
+---
+
+**Step 5 — Non-`react-native-webview` surfaces:**
+
+If the developer mentions opening web content outside `react-native-webview`, automatic sync does not cover these surfaces. Inform the developer:
+
+> "Automatic CLID sync only works for `react-native-webview`. For other surfaces, use `getClientId()` and `setClientId()` to manage the client ID manually. See **AGENTS-snippets.md § Client ID** for the API."
 
 ---
 
@@ -503,6 +539,7 @@ Seed your task list from this table before writing any code. Every row must appe
 | User ID setup | Login, registration, and logout implementation; or stop instructions if PII-only |
 | Custom events and tags | One code snippet each (if requested) |
 | PageView tracking | Implemented (if requested) or skipped |
+| WebView CLID sync | One of: (a) skipped — `react-native-webview` not found; (b) skipped — version < 11; (c) skipped by developer; (d) enabled — domains via remote config only; (e) configured with domains [list] and `clidSyncConfig` added to `createTracker`; non-`react-native-webview` surfaces noted if raised by developer |
 | AGP compatibility check | Detected AGP version; if >= 9.0, confirm plugin >= 0.3.7; or skipped if no Android setup |
 | Build verification | Outcome for both Android and iOS |
 | Product validation | Ask developer to validate in Pulse App -> Activation Module -> Live Lens |
