@@ -577,6 +577,83 @@ try {
 
 The web app must use the Conviva WebView tracker to send events.
 
+### WebView Client ID Sync
+
+> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+ with [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+.
+
+The SDK automatically shares the native client ID with in-app WebViews, linking native and web sessions to the same user. Two mechanisms handle this:
+
+- **Cookie (primary):** Seeds a `Conviva_sdkConfig` cookie into the WebView cookie jar per configured domain.
+- **JS bridge (fallback):** Web SDK reads the native client ID from the injected bridge when the cookie is unavailable.
+
+> JavaScript must be enabled in the WebView for either approach to function.
+
+**Web SDK compatibility:** The cookie path works with any Web SDK version. The JS bridge fallback requires **Web SDK ≥ [2.2.0](https://github.com/Conviva/conviva-js-appanalytics/releases/tag/v2.2.0)**.
+
+#### Integration Options
+
+**Option 1 — Remote config only (no code changes required):** Both cookie seeding and JS bridge are enabled by default. Contact Conviva support to configure domains in remote config for your account.
+
+**Option 2 — Supply fallback domains in app code:**
+
+Pass a `clidSyncConfig` object as the third argument to `createTracker()`. App-config domains take effect immediately on first launch, before the first remote config fetch. Once remote config is fetched, its domain list replaces the app-config list.
+
+**JavaScript:**
+```js
+import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+let tracker;
+try {
+  tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+    clidSyncConfig: {
+      webViewCookie: {
+        enabled: true,
+        domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
+      },
+      webViewBridge: {
+        enabled: true,
+      },
+    },
+  });
+} catch (error) {
+  console.error(error);
+}
+```
+
+**TypeScript:**
+```ts
+import { createTracker, ReactNativeTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+let tracker: ReactNativeTracker | undefined;
+try {
+  tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+    clidSyncConfig: {
+      webViewCookie: {
+        enabled: true,
+        domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
+      },
+      webViewBridge: {
+        enabled: true,
+      },
+    },
+  });
+} catch (error) {
+  console.error(error);
+}
+```
+
+> Use leading-dot domains (`.example.com`) to cover all subdomains. Domains without a leading dot match only the exact host.
+
+| Option | Type | Description |
+|---|---|---|
+| `webViewCookie.domains` | `string[]` | Domains that receive the `Conviva_sdkConfig` cookie. Use leading-dot form (`.example.com`). |
+| `webViewCookie.enabled` | `boolean` | Override for cookie sync enable state (primarily remote-config-controlled). |
+| `webViewBridge.enabled` | `boolean` | Enables `__ConvivaNativeWebInterface` JS bridge in WebViews (primarily remote-config-controlled). |
+
+> The `enabled` flags are primarily controlled by Conviva remote config; app-supplied values serve as a local fallback.
+> CLID sync is not supported on tvOS and is silently ignored on that platform.
+
+
 ### Client ID
 
 ```js
