@@ -607,12 +607,9 @@ try {
   tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
     clidSyncConfig: {
       webViewCookie: {
-        enabled: true,
         domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
       },
-      webViewBridge: {
-        enabled: true,
-      },
+      webViewBridge: {},
     },
   });
 } catch (error) {
@@ -629,12 +626,9 @@ try {
   tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
     clidSyncConfig: {
       webViewCookie: {
-        enabled: true,
         domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
       },
-      webViewBridge: {
-        enabled: true,
-      },
+      webViewBridge: {},
     },
   });
 } catch (error) {
@@ -647,11 +641,6 @@ try {
 | Option | Type | Description |
 |---|---|---|
 | `webViewCookie.domains` | `string[]` | Domains that receive the `Conviva_sdkConfig` cookie. Use leading-dot form (`.example.com`). |
-| `webViewCookie.enabled` | `boolean` | Override for cookie sync enable state (primarily remote-config-controlled). |
-| `webViewBridge.enabled` | `boolean` | Enables `__ConvivaNativeWebInterface` JS bridge in WebViews (primarily remote-config-controlled). |
-
-> The `enabled` flags are primarily controlled by Conviva remote config; app-supplied values serve as a local fallback.
-> CLID sync is not supported on tvOS and is silently ignored on that platform.
 
 
 ### Client ID
