@@ -579,9 +579,9 @@ The web app must use the Conviva WebView tracker to send events.
 
 ### WebView Client ID Sync
 
-> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+ with [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+. JavaScript must be enabled in the WebView for this feature to work.
+> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+, [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+, and Android plugin [v0.3.9](https://github.com/Conviva/conviva-android-plugin/releases/tag/v0.3.9)+. JavaScript must be enabled in the WebView for this feature to work.
 
-The SDK automatically shares the native client ID with in-app WebViews, linking native and web sessions to the same user. Two mechanisms handle this:
+The SDK automatically shares the native client ID with in-app WebViews, linking native and web sessions to the same user. It uses two mechanisms:
 
 - **Cookie (primary):** Seeds a `Conviva_sdkConfig` cookie into the WebView cookie jar per configured domain.
 - **JS bridge (fallback):** Web SDK reads the native client ID from the injected bridge when the cookie is unavailable.
@@ -594,7 +594,7 @@ The SDK automatically shares the native client ID with in-app WebViews, linking 
 
 **Option 2 — Supply fallback domains in app code:**
 
-Pass a `clidSyncConfig` object as the third argument to `createTracker()`. App-config domains take effect immediately on first launch, before the first remote config fetch. Once remote config is fetched, its domain list replaces the app-config list.
+Pass a `clidSyncConfig` object as the third argument to `createTracker()`. App-config domains take effect immediately before the first remote config fetch; once remote config is received, its domain list replaces the app-config list.
 
 **JavaScript:**
 ```js
@@ -606,7 +606,7 @@ try {
     clidSyncConfig: {
       webViewCookie: {
         domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
-      },
+      }
     },
   });
 } catch (error) {
@@ -624,7 +624,7 @@ try {
     clidSyncConfig: {
       webViewCookie: {
         domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
-      },
+      }
     },
   });
 } catch (error) {
