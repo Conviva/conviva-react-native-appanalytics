@@ -609,7 +609,6 @@ try {
       webViewCookie: {
         domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
       },
-      webViewBridge: {},
     },
   });
 } catch (error) {
@@ -628,7 +627,6 @@ try {
       webViewCookie: {
         domains: ['.example.com', '.partner.com'], // use leading-dot for subdomain coverage
       },
-      webViewBridge: {},
     },
   });
 } catch (error) {
