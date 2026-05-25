@@ -579,14 +579,12 @@ The web app must use the Conviva WebView tracker to send events.
 
 ### WebView Client ID Sync
 
-> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+ with [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+.
+> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+ with [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+. JavaScript must be enabled in the WebView for this feature to work.
 
 The SDK automatically shares the native client ID with in-app WebViews, linking native and web sessions to the same user. Two mechanisms handle this:
 
 - **Cookie (primary):** Seeds a `Conviva_sdkConfig` cookie into the WebView cookie jar per configured domain.
 - **JS bridge (fallback):** Web SDK reads the native client ID from the injected bridge when the cookie is unavailable.
-
-> JavaScript must be enabled in the WebView for either approach to function.
 
 **Web SDK compatibility:** The cookie path works with any Web SDK version. The JS bridge fallback requires **Web SDK ≥ [2.2.0](https://github.com/Conviva/conviva-js-appanalytics/releases/tag/v2.2.0)**.
 
