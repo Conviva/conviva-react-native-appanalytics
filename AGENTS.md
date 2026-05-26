@@ -492,9 +492,9 @@ Check `package.json` for `react-native-webview` in `dependencies` or `devDepende
 
 **Step 4 — Add `clidSyncConfig` to `createTracker`:**
 
-Prefix each domain with a leading dot for subdomain coverage. Edit `src/conviva.ts` (or `src/conviva.js`) to pass `clidSyncConfig` as the third argument to `createTracker`. See **AGENTS-snippets.md § WebView Client ID Sync** for the exact snippet.
+Prefix each domain with a leading dot for subdomain coverage. Edit `src/conviva.ts` (or `src/conviva.js`) to pass `clidSyncConfig` as the third argument to `createTracker`. See **DEVELOPER_GUIDE.md § WebView Client ID Sync** for the exact snippet.
 
-> **Note:** The `enabled` flags inside `webViewCookie` and `webViewBridge` are remote-config controlled — local values are ignored. Only `domains` is respected from app code. Match the domain list here with the remote config list to avoid gaps on first launch.
+> **Note:** The `enabled` flags inside `webViewCookie` and `webViewBridge` are remote-config controlled — local values are ignored. Only `clidSyncConfig.webViewCookie.domains` is respected from app code and there is no `clidSyncConfig.webViewBridge.domains` field. Match the domain list here with the remote config list to avoid gaps on first launch.
 
 Record in Section 18: "WebView CLID sync: configured with domains [list domains]."
 
