@@ -7,7 +7,7 @@ Single source of truth. Governs: Cursor, Claude Code, Codex, ChatGPT, Gemini CLI
 1. State: "I have read AGENTS.md and will follow its contract."
 2. Ask developer for all inputs in Section 3 before writing any code.
 3. Seed task list from Section 17 before writing any code.
-4. Execute Sections 4-16 in order. Every Section 17 row must appear in your response.
+4. Execute Sections 4-17 in order. Every Section 18 row must appear in your response.
 5. If you cannot proceed without violating a rule, stop and ask.
 
 ---
@@ -454,7 +454,61 @@ Use `tracker.trackPageView({pageUrl, pageTitle?, referrer?})` to track in-app pa
 
 ---
 
-## 16. Build and Validation
+## 16. WebView Client ID Sync (Optional)
+
+**Step 1 — Detect WebView usage (from Section 3a scan results, no re-read needed):**
+
+Check `package.json` for `react-native-webview` in `dependencies` or `devDependencies`.
+
+| Result | Action |
+|---|---|
+| Not found | Skip this section. Record in Section 18: "WebView CLID sync: skipped — `react-native-webview` not found." |
+| Found at version < 11 | Skip this section. Record in Section 18: "WebView CLID sync: skipped — `react-native-webview` v11+ required (found vX)." |
+| Found at version >= 11 | Continue to Step 2. |
+
+---
+
+**Step 2 — Ask the developer:**
+
+> "Your app uses `react-native-webview`. Do you want Conviva to track native and in-app WebView sessions as a single user identity — so a user's journey is continuous across native screens and web content?"
+>
+> - **Yes** → continue to Step 3.
+> - **No / Skip** → record in Section 18: "WebView CLID sync: skipped by developer." Move to Section 17.
+
+---
+
+**Step 3 — Ask for domains:**
+
+> "What domains does your WebView load? (e.g. `app.example.com`, `checkout.partner.com`)
+>
+> Providing domains seeds cookies immediately at launch, before remote config loads. You can skip this if you prefer to manage all domains via Conviva remote config — contact Conviva support in that case."
+
+| Response | Action |
+|---|---|
+| No domains provided / skip | No code changes. Record in Section 18: "WebView CLID sync: enabled — domains via remote config only." Move to Section 17. |
+| Domains provided | Continue to Step 4. |
+
+---
+
+**Step 4 — Add `clidSyncConfig` to `createTracker`:**
+
+Prefix each domain with a leading dot for subdomain coverage. Edit `src/conviva.ts` (or `src/conviva.js`) to pass `clidSyncConfig` as the third argument to `createTracker`. See **DEVELOPER_GUIDE.md § WebView Client ID Sync** for the exact snippet.
+
+> **Note:** The `enabled` flags inside `webViewCookie` and `webViewBridge` are remote-config controlled — local values are ignored. Only `clidSyncConfig.webViewCookie.domains` is respected from app code and there is no `clidSyncConfig.webViewBridge.domains` field. Match the domain list here with the remote config list to avoid gaps on first launch.
+
+Record in Section 18: "WebView CLID sync: configured with domains [list domains]."
+
+---
+
+**Step 5 — Non-`react-native-webview` surfaces:**
+
+If the developer mentions opening web content outside `react-native-webview`, automatic sync does not cover these surfaces. Inform the developer:
+
+> "Automatic CLID sync only works for `react-native-webview`. For other surfaces, use `getClientId()` and `setClientId()` to manage the client ID manually. See **AGENTS-snippets.md § Client ID** for the API."
+
+---
+
+## 17. Build and Validation
 
 **Build verification:** Ask developer to run both Android and iOS debug builds. Share any error output and fix using only Section 13 allowed symbols.
 
@@ -467,7 +521,7 @@ If Metro bundler errors occur, read `AGENTS-troubleshooting.md`.
 
 ---
 
-## 17. Mandatory Checklist
+## 18. Mandatory Checklist
 
 Seed your task list from this table before writing any code. Every row must appear in your final response.
 
@@ -485,6 +539,7 @@ Seed your task list from this table before writing any code. Every row must appe
 | User ID setup | Login, registration, and logout implementation; or stop instructions if PII-only |
 | Custom events and tags | One code snippet each (if requested) |
 | PageView tracking | Implemented (if requested) or skipped |
+| WebView CLID sync | One of: (a) skipped — `react-native-webview` not found; (b) skipped — version < 11; (c) skipped by developer; (d) enabled — domains via remote config only; (e) configured with domains [list] and `clidSyncConfig` added to `createTracker`; non-`react-native-webview` surfaces noted if raised by developer |
 | AGP compatibility check | Detected AGP version; if >= 9.0, confirm plugin >= 0.3.7; or skipped if no Android setup |
 | Build verification | Outcome for both Android and iOS |
 | Product validation | Ask developer to validate in Pulse App -> Activation Module -> Live Lens |
