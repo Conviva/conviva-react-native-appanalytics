@@ -406,6 +406,158 @@ try {
 
 ---
 
+## Error Tracking (>= 0.5.0)
+
+JS error tracking is **on by default** — uncaught errors and unhandled promise rejections are captured automatically once `createTracker(...)` runs.
+
+Everything below is **optional**; add it only when the developer requests it (see AGENTS.md § 16a Step 1). `trackError` and `errorTracker` are **standalone exports** — import them directly; they do not require the `tracker` instance and need no `if (tracker != null)` guard.
+
+### Disable or configure via `errorTracking`
+
+Pass `errorTracking` as the third argument to `createTracker` in `src/conviva.ts` (or `src/conviva.js`). Pass `false` to disable, or an object to tune capture. Omit it entirely to keep the defaults.
+
+#### Allowed `errorTracking` config keys
+
+When passing the object form, use **only** these keys — do not invent others. All are optional.
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `enabled` | `boolean` | `true` | Master switch for the error tracking module. |
+| `captureGlobalErrors` | `boolean` | `true` | Capture uncaught errors via the global handler. |
+| `captureUnhandledRejections` | `boolean` | `true` | Capture unhandled promise rejections. |
+| `suppressInDev` | `boolean` | `false` | Skip capture while running in `__DEV__`. |
+| `enableRateLimiting` | `boolean` | `true` | Drop events once the per-window limit is exceeded. |
+| `maxEventsPerWindow` | `number` | `20` | Max events captured per rate-limit window. |
+| `rateLimitWindowMs` | `number` | `1000` | Rate-limit window length, in milliseconds. |
+| `disconnectDurationMs` | `number` | `2000` | Cool-down after the limit is hit, in milliseconds. |
+| `promiseRejectionsAsHandled` | `boolean` | `false` | Report unhandled rejections as handled (`warning`) instead of unhandled (`error`). |
+| `bundleId` | `string` | — | JS bundle hash for symbolication of OTA-updated apps. |
+| `beforeCapture` | `(payload) => boolean \| void` | — | Enrich or filter each event; return `false` to drop it. |
+
+> `errorTracking: false` (the boolean form) fully disables the module. The object form keeps tracking on and overrides only the keys you set.
+
+**`src/conviva.ts` (TypeScript) — disable:**
+```ts
+import { createTracker, ReactNativeTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+let tracker: ReactNativeTracker | undefined;
+try {
+  tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+    errorTracking: false, // fully disable JS error capture
+  });
+  if (!tracker) {
+    console.error('Tracker initialization returned null');
+  }
+} catch (error) {
+  console.error(error);
+}
+export { tracker };
+```
+
+**`src/conviva.js` (JavaScript) — tune capture:**
+```js
+import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+let tracker;
+try {
+  tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+    errorTracking: {
+      suppressInDev: true,       // skip capture in __DEV__
+      maxEventsPerWindow: 10,    // default 20
+      beforeCapture: (payload) => {
+        // Return false to drop an event; mutate payload to enrich it.
+        if (payload.message.includes('Network request failed')) {
+          return false;
+        }
+      },
+    },
+  });
+  if (!tracker) {
+    console.error('Tracker initialization returned null');
+  }
+} catch (error) {
+  console.error(error);
+}
+export { tracker };
+```
+
+**Merging with an existing third argument** — `createTracker` takes a single config object. If one is already passed (e.g. `clidSyncConfig` from WebView CLID sync), add `errorTracking` to the **same** object; do not add a second argument or replace existing keys:
+```js
+tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+  clidSyncConfig: {
+    webViewCookie: { domains: ['.example.com'] },
+  },
+  errorTracking: {
+    suppressInDev: true,
+  },
+});
+```
+
+### Capture render-phase errors with `ConvivaErrorBoundary`
+
+Wrap any subtree to capture errors thrown during render and show a fallback UI.
+
+```jsx
+import { ConvivaErrorBoundary } from '@convivainc/conviva-react-native-appanalytics';
+import { View, Text, Button } from 'react-native';
+
+<ConvivaErrorBoundary
+  name="CheckoutScreen"
+  fallback={({ error, reset }) => (
+    <View>
+      <Text>Something went wrong: {String(error && error.message)}</Text>
+      <Button title="Try again" onPress={reset} />
+    </View>
+  )}
+>
+  <CheckoutScreen />
+</ConvivaErrorBoundary>
+```
+
+### Report handled errors with `trackError`
+
+```js
+import { trackError } from '@convivainc/conviva-react-native-appanalytics';
+
+try {
+  await riskyOperation();
+} catch (error) {
+  try {
+    await trackError({
+      message: error.message,
+      errorType: error.name,   // optional
+      stackTrace: error.stack, // optional
+      isFatal: false,          // optional
+      isHandled: true,         // optional
+      attributes: { feature: 'checkout', step: 'payment' }, // optional
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+```
+
+> `trackError` is also available on the tracker instance: `tracker.trackError({ message: '...' })`. Only `message` is required.
+
+### Attach custom attributes to every error
+
+```js
+import { errorTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+try {
+  errorTracker.addAttribute('appBuild', '2026.6.1');
+  errorTracker.addAttribute('environment', 'production');
+  // Remove when no longer relevant:
+  errorTracker.removeAttribute('environment');
+} catch (error) {
+  console.error(error);
+}
+```
+
+> `errorTracker` also exposes `setEnabled(boolean)` to toggle capture and `setRateLimitingEnabled(boolean)` to toggle rate limiting at runtime.
+
+---
+
 ## React Navigation Autotracking
 
 ### React Navigation >= 5 (NavigationContainer)

@@ -5,6 +5,7 @@ Use the Conviva React Native App Analytics SDK to auto-collect events and track 
 **Table of Contents**
 - [Quick Start](#quick-start)
 - [More Features](#more-features)
+- [Error Tracking](#error-tracking)
 - [Auto-collected Events](#auto-collected-events)
 - [FAQ](#faq)
 
@@ -655,6 +656,140 @@ try {
 }
 ```
 
+### Error Tracking
+
+> Available from React Native SDK v0.5.0.
+
+The SDK captures JavaScript errors automatically once `createTracker(...)` runs — **no extra code is required**. The following are captured out of the box:
+
+- **Uncaught errors** thrown anywhere in your JS (via a chained global error handler).
+- **Unhandled promise rejections** (promises rejected with no `.catch()`).
+- **Native fatal crashes**, deduplicated against the JS error stream.
+
+Rate limiting is enabled by default to protect against error storms.
+
+Error tracking is **on by default**. To disable it entirely, pass `errorTracking: false` as the third argument to `createTracker`: or via conviva remote config
+
+```js
+import { createTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+const tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+  errorTracking: false, // fully disable JS error capture
+});
+```
+
+#### Configuration Options
+
+Pass an `errorTracking` object to `createTracker` to customize capture. Every field is optional.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `true` | Master switch for the error tracking module. |
+| `captureGlobalErrors` | `boolean` | `true` | Capture uncaught errors via the global handler. |
+| `captureUnhandledRejections` | `boolean` | `true` | Capture unhandled promise rejections. |
+| `suppressInDev` | `boolean` | `false` | Skip capture while running in dev mode (`__DEV__`). |
+| `enableRateLimiting` | `boolean` | `true` | Drop events once the per-window limit is exceeded. |
+| `maxEventsPerWindow` | `number` | `20` | Max events captured per rate-limit window. |
+| `rateLimitWindowMs` | `number` | `1000` | Rate-limit window length, in milliseconds. |
+| `disconnectDurationMs` | `number` | `2000` | Cool-down after the limit is hit, in milliseconds. |
+| `promiseRejectionsAsHandled` | `boolean` | `false` | Report unhandled rejections as handled (`warning`) instead of unhandled (`error`). |
+| `bundleId` | `string` | — | JS bundle hash for symbolication of OTA-updated apps. |
+| `beforeCapture` | `(payload) => boolean \| void` | — | Hook to enrich or filter each event. Return `false` to drop it. |
+
+```js
+const tracker = createTracker('YOUR_CUSTOMER_KEY', 'YOUR_APP_NAME', {
+  errorTracking: {
+    suppressInDev: true,
+    maxEventsPerWindow: 10,
+    beforeCapture: (payload) => {
+      // Drop noisy errors, or attach extra context before dispatch.
+      if (payload.message.includes('Network request failed')) {
+        return false; // suppress this event
+      }
+    },
+  },
+});
+```
+
+#### Capture Render-phase Errors with `ConvivaErrorBoundary`
+
+Errors thrown during a component's render are not caught by the global handler. Wrap any part of your tree in `ConvivaErrorBoundary` to capture those errors and render a fallback UI(optional).
+
+```jsx
+import { ConvivaErrorBoundary } from '@convivainc/conviva-react-native-appanalytics';
+
+<ConvivaErrorBoundary
+  name="CheckoutScreen"
+  fallback={({ error, reset }) => (
+    <View>
+      <Text>Something went wrong: {String(error && error.message)}</Text>
+      <Button title="Try again" onPress={reset} />
+    </View>
+  )}
+>
+  <CheckoutScreen />
+</ConvivaErrorBoundary>
+```
+
+| Prop | Type | Description |
+|---|---|---|
+| `children` | `ReactNode` | The subtree to protect. |
+| `fallback` | `ReactNode` or `({ error, reset }) => ReactNode` | What to render after an error is caught. |
+| `name` | `string` | Human-readable label attached to the captured error. |
+| `resetKeys` | `unknown[]` | When any value changes, the boundary resets and re-renders `children`. |
+| `onError` | `(error, componentStack) => void` | Optional callback invoked when an error is caught. Must not throw. |
+
+#### Report Errors Manually with `trackError`
+
+Use `trackError` inside a `try/catch` to report errors you handle yourself. `message` is required; all other fields are optional.
+
+```js
+import { trackError } from '@convivainc/conviva-react-native-appanalytics';
+
+try {
+  await riskyOperation();
+} catch (error) {
+  try {
+    await trackError({
+      message: error.message,
+      errorType: error.name,
+      stackTrace: error.stack,
+      isFatal: false,
+      isHandled: true,
+      attributes: { feature: 'checkout', step: 'payment' },
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+```
+
+`trackError` is also available on the tracker instance as `tracker.trackError({ ... })`.
+
+#### Attach Custom Attributes to Every Error
+
+Use the `errorTracker` singleton to attach attributes that should appear on all subsequently captured errors (for example, app build or environment). Attributes persist until removed.
+
+```js
+import { errorTracker } from '@convivainc/conviva-react-native-appanalytics';
+
+try {
+  errorTracker.addAttribute('appBuild', '2026.6.1');
+  errorTracker.addAttribute('environment', 'production');
+  // Remove when no longer relevant:
+  errorTracker.removeAttribute('environment');
+} catch (error) {
+  console.error(error);
+}
+```
+
+`errorTracker` also exposes `setEnabled(boolean)` to toggle capture at runtime and `setRateLimitingEnabled(boolean)` to toggle rate limiting.
+
+#### Symbolication
+
+Minified, production stack traces are symbolicated automatically by Conviva's backend — no source-map upload step is required in your build.
+Note: For apps that ship JS via OTA updates, supply a `bundleId` in the `errorTracking` config so the backend can match the running bundle to its source maps.
+
 ---
 
 ## Auto-collected Events
@@ -665,7 +800,7 @@ Conviva automatically collects a rich set of app performance metrics after compl
 |---|---|---|
 | `network_request` | After receiving a network request response | Android: requires android-plugin; iOS: auto-collected |
 | `screen_view` | When a screen is interacted with on first launch or relaunch | Native sensors + Conviva instrumentation plugin + navigation container wrapping |
-| `application_error` | When an unhandled error occurs in the application | Auto-collected from native sensors |
+| `application_error` | When an unhandled error occurs in the application, including uncaught JavaScript errors and unhandled promise rejections | Auto-collected from native sensors; JS errors captured by the [Error Tracking](#error-tracking) module |
 | `button_click` | On button click callback | Native sensors + Conviva instrumentation babel plugin |
 | `application_background` | When the app moves to the background | Auto-collected from native sensors |
 | `application_foreground` | When the app moves to the foreground | Auto-collected from native sensors |

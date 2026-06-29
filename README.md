@@ -2,7 +2,7 @@
 
 # conviva-react-native-appanalytics
 
-Use Conviva React Native App Analytics SDK to auto-collect events and track application-specific events and state changes. The React Native bridges are internally built on top of the [Android](https://github.com/Conviva/conviva-android-appanalytics) and [iOS](https://github.com/Conviva/conviva-ios-appanalytics) native sensors.
+Use Conviva React Native App Analytics SDK to auto-collect events, track application-specific events and state changes, and capture JS errors. The React Native bridges are internally built on top of the [Android](https://github.com/Conviva/conviva-android-appanalytics) and [iOS](https://github.com/Conviva/conviva-ios-appanalytics) native sensors.
 
 | | |
 |---|---|
