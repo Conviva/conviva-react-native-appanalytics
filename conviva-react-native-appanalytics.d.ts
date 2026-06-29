@@ -1,4 +1,118 @@
-import * as react from 'react';
+import * as React$1 from 'react';
+
+/** Which JS capture path produced a given error event. */
+type ErrorSource = 'globalHandler' | 'unhandledRejection' | 'errorBoundary' | 'manual';
+/**
+ * Severity of the error — the primary bucketing dimension for dashboards and
+ * backend queries. Mirrors Sentry's `level` and Bugsnag's `severity`.
+ */
+type ErrorSeverity = 'fatal' | 'error' | 'warning' | 'info';
+/** Active JS engine at runtime. Determines which symbolication pipeline applies. */
+type JsEngine = 'hermes' | 'jsc' | 'unknown';
+/** The complete payload sent across the native bridge for every JS error event. */
+interface JsErrorPayload {
+    /** Epoch milliseconds captured at the moment _dispatch() is called. */
+    timestamp: number;
+    /** Human-readable error message. Truncated to MAX_MESSAGE_LENGTH in _dispatch(). */
+    message: string;
+    /** error.name — e.g. "TypeError", "ReferenceError", "UnhandledRejection". */
+    errorType: string;
+    /** JS stack trace string. Truncated to MAX_STACK_TRACE_LENGTH in _dispatch(). */
+    stackTrace: string;
+    /** true only when the error is fatal / app-terminating. */
+    isFatal: boolean;
+    /**
+     * true  → caught intentionally (ErrorBoundary, try/catch + trackError).
+     * false → uncaught (global handler, unhandled promise rejection).
+     */
+    isHandled: boolean;
+    /** Which JS capture path produced this event. */
+    errorSource: ErrorSource;
+    /** Severity of the error — primary dashboard bucketing dimension. */
+    severity: ErrorSeverity;
+    /** React component tree to the failing component. Only for errorBoundary. */
+    componentStack?: string;
+    /** Line number extracted from the first frame of the stack trace. */
+    lineNumber?: number;
+    /** Column number extracted from the first frame of the stack trace. */
+    lineColumn?: number;
+    /** Source file name extracted from the first frame of the stack trace. */
+    fileName?: string;
+    /**
+     * SHA-256 hash of the compiled JS bundle, injected at build time.
+     * Required when backend symbolication is enabled AND the app uses OTA updates.
+     */
+    bundleId?: string;
+    /** Active JS engine at capture time. */
+    jsEngine: JsEngine;
+    /** System-injected + consumer-defined attributes attached at capture time. */
+    attributes?: Record<string, string | number | boolean>;
+}
+/** Bridge adapter interface — swap for a mock in tests. */
+interface BridgeAdapter {
+    isAvailable(): boolean;
+    reportJsError(payload: JsErrorPayload): void;
+}
+/**
+ * Internal configuration for the error tracking module.
+ * NOT directly exposed to consumers — the existing ConvivaTracker.init() config
+ * schema is extended with error tracking fields, and the existing init flow
+ * constructs this internal config.
+ */
+interface ErrorTrackingInternalConfig {
+    enabled: boolean;
+    captureGlobalErrors: boolean;
+    captureUnhandledRejections: boolean;
+    suppressInDev: boolean;
+    enableRateLimiting: boolean;
+    maxEventsPerWindow: number;
+    rateLimitWindowMs: number;
+    /** Circuit-breaker cooldown duration in ms after rate limit is exceeded. */
+    disconnectDurationMs: number;
+    /**
+     * When true, unhandled promise rejections are reported with isHandled:true
+     * and severity:'warning' instead of isHandled:false + severity:'error'.
+     * Mirrors Bugsnag's reportUnhandledPromiseRejectionsAsHandled option.
+     */
+    promiseRejectionsAsHandled: boolean;
+    /**
+     * Consumer-supplied hook. Return false to suppress. Mutate payload to enrich.
+     * If this throws, the error is captured anyway (fail-open per D8).
+     * Filtered events (returning false) do NOT consume a rate-limit token.
+     */
+    beforeCapture?: (payload: JsErrorPayload) => boolean | void;
+    /**
+     * Optional JS bundle hash override for OTA apps not using the Metro plugin.
+     */
+    bundleId?: string;
+    /** Injected bridge adapter. Production default: NativeBridgeAdapter. */
+    bridgeAdapter?: BridgeAdapter;
+}
+/**
+ * Consumer-facing configuration exposed through TrackerControllerConfiguration.
+ * Every field is optional — defaults are applied by _initFromTracker in the
+ * error tracker singleton.
+ */
+interface ErrorTrackingConfiguration {
+    enabled?: boolean;
+    captureGlobalErrors?: boolean;
+    captureUnhandledRejections?: boolean;
+    suppressInDev?: boolean;
+    enableRateLimiting?: boolean;
+    /** Default: 20 (matching Conviva JS horizontal tracker). */
+    maxEventsPerWindow?: number;
+    /** Default: 1 000 ms (1-second window). */
+    rateLimitWindowMs?: number;
+    /** Circuit-breaker cooldown after limit hit. Default: 2 000 ms. */
+    disconnectDurationMs?: number;
+    /** Default: false. See Bugsnag reportUnhandledPromiseRejectionsAsHandled. */
+    promiseRejectionsAsHandled?: boolean;
+    /** JS bundle hash for source map lookup in Conviva's symbolication service. */
+    bundleId?: string;
+    beforeCapture?: (payload: JsErrorPayload) => boolean | void;
+    /** @internal — test injection point */
+    bridgeAdapter?: BridgeAdapter;
+}
 
 /**
  * HttpMethod type
@@ -327,6 +441,70 @@ interface RemoteConfiguration {
     method?: HttpMethod;
 }
 /**
+ * SessionReplayConfiguration
+ *
+ * Nested structure that mirrors the native replay SDK JSON schema exactly.
+ * Passed as `sessionReplayConfig` to createTracker. The bridge passes this
+ * through to the native SDK without key translation  -  same pattern as all
+ * other tracker configs.
+ *
+ * In production, enabled/sampling are driven by remote config.
+ * Set them here for local validation only.
+ */
+interface SessionReplayConfiguration {
+    /** Enable replay. Remote config overrides in production. @defaultValue false */
+    enabled?: boolean;
+    /** Enable verbose replay SDK logs (snapshot queue, flush counts). @defaultValue false */
+    logging?: boolean;
+    /** Sampling configuration. Remote config overrides in production. */
+    sampling?: {
+        /** Sampling percentage 0-100. @defaultValue 0 */
+        pct?: number;
+    };
+    /** Replay ingest network configuration (separate from analytics collector). */
+    networkConfiguration?: {
+        /** Replay ingest endpoint URL. e.g. 'https://rcg.conviva.com' */
+        endpoint?: string;
+    };
+    /** Replay emitter configuration. */
+    emitterConfiguration?: {
+        /** Network data mode: 'wifi' (wifi-only) or 'any'. @defaultValue 'wifi' */
+        dataMode?: 'wifi' | 'any';
+        /** Upload interval in seconds. @defaultValue 60 */
+        uploadInterval?: number;
+        /** Policy expiry time in seconds. @defaultValue 3600 */
+        policyExpiryTime?: number;
+        /** Flush threshold (number of events before an upload). @defaultValue 20 */
+        flushAt?: number;
+        /** Max events per upload batch. @defaultValue 120 */
+        maxBatchSize?: number;
+        /** Max events held in queue. @defaultValue 1000 */
+        maxQueueSize?: number;
+    };
+    /** Mobile recorder / masking configuration. */
+    mobRecorderConfiguration?: {
+        /** Mask all text inputs. @defaultValue true */
+        maskAllInputs?: boolean;
+        /** Mask all images. @defaultValue true */
+        maskAllImages?: boolean;
+        /**
+         * Mask system views.
+         * Read as maskAllSystemViews on Android, maskSandboxedSystemViews on iOS.
+         * Include both keys to cover both platforms.
+         * @defaultValue true
+         */
+        maskAllSystemViews?: boolean;
+        /** iOS-specific key for masking sandboxed/system views. @defaultValue true */
+        maskSandboxedSystemViews?: boolean;
+        /** Input categories to mask. e.g. ['emailAddress','password','telephoneNumber'] */
+        maskInputOptions?: string[];
+        /** Capture throttle delay in ms. @defaultValue 1000 */
+        throttleDelayMs?: number;
+        /** Screenshot JPEG compression quality 0-100. @defaultValue 10 */
+        compressionQuality?: number;
+    };
+}
+/**
  * The TrackerControllerConfiguration
  */
 interface TrackerControllerConfiguration {
@@ -339,7 +517,17 @@ interface TrackerControllerConfiguration {
     gdprConfig?: GdprConfiguration;
     gcConfig?: GCConfiguration;
     remoteConfig?: RemoteConfiguration;
+    /**
+     * Error tracking configuration. Pass `false` to fully disable JS error
+     * capture; omit or pass an object to opt in with defaults.
+     *
+     * When enabled, the SDK installs a chained ErrorUtils handler plus an
+     * engine-appropriate unhandled-promise-rejection hook, and exposes the
+     * `ConvivaErrorBoundary` React component + `tracker.trackError` API.
+     */
+    errorTracking?: false | ErrorTrackingConfiguration;
     clidSyncConfig?: ClidSyncConfiguration;
+    sessionReplayConfig?: SessionReplayConfiguration;
 }
 /**
  * ScreenView event properties
@@ -618,6 +806,25 @@ type RevenueEventItemProps = {
     extraMetadata?: Record<string, unknown>;
 };
 /**
+ * Properties accepted by `tracker.trackError` for manual error reporting.
+ *
+ * - `message` is required.
+ * - `errorType` and `stackTrace` are optional — most consumers will pass an
+ *   `Error` instance through the higher-level `ConvivaErrorBoundary` component
+ *   or rely on automatic capture via the global handler / promise-rejection
+ *   hook. This shape is designed for hand-rolled try/catch blocks where the
+ *   consumer has already stringified an error.
+ */
+type ErrorEventProps = {
+    message: string;
+    errorType?: string;
+    stackTrace?: string;
+    isFatal?: boolean;
+    isHandled?: boolean;
+    componentStack?: string;
+    attributes?: Record<string, string | number | boolean>;
+};
+/**
  * RevenueEvent properties.
  * Required: totalOrderAmount, transactionId, currency.
  */
@@ -877,6 +1084,29 @@ type ReactNativeTracker = {
     * @param eventData - The user click event properties
     */
     readonly trackClickEvent: (eventData: any) => Promise<void>;
+    /**
+     * Passes JS bundle identity fields to the native SDK so they are attached
+     * to the Conviva app-context entity on every subsequent event.
+     *
+     * Recognised keys: `jsBundleSource`, `jsBundleId`, `jsBundleChannel`,
+     * `jsBundleLabel`, `jsEngine`. Unknown keys and empty string values are
+     * silently ignored by the native SDK.
+     *
+     * @param info - Map of JS bundle fields
+     */
+    readonly setJsBundleInfo: (info: Record<string, string>) => Promise<void>;
+    /**
+     * Manually report a JS error. For try/catch blocks and other sites where
+     * the consumer wants to capture an error with richer context than what the
+     * automatic global handler / promise-rejection / ErrorBoundary hooks
+     * provide. Fail-silent — never throws.
+     *
+     * Defaults: `isFatal=false`, `isHandled=true`.
+     *
+     * @param argmap   - The error event properties. `message` is required.
+     * @param contexts - Optional event contexts forwarded to the native tracker.
+     */
+    readonly trackError: (argmap: ErrorEventProps, contexts?: EventContext[]) => Promise<void>;
 };
 
 /**
@@ -896,11 +1126,349 @@ declare function getWebViewCallback(): (message: {
 
 declare function withReactNavigationAutotrack(track: any): (AppContainer: any) => React.ForwardRefExoticComponent<React.RefAttributes<any>>;
 
+interface ConvivaErrorBoundaryProps {
+    /**
+     * Children tree to protect. If any descendant throws during render, commit,
+     * or lifecycle, this boundary captures the error and renders `fallback`.
+     */
+    children?: React$1.ReactNode;
+    /**
+     * What to render when an error is active. Either a ReactNode or a function
+     * that receives the captured error + a `reset()` callback, matching
+     * Sentry and react-error-boundary conventions.
+     */
+    fallback?: React$1.ReactNode | ((args: {
+        error: Error;
+        reset: () => void;
+    }) => React$1.ReactNode);
+    /**
+     * When any value in this array changes between renders, the boundary
+     * resets and re-renders children. Useful to recover on route changes.
+     */
+    resetKeys?: ReadonlyArray<unknown>;
+    /** Consumer callback invoked just before dispatch. Must not throw. */
+    onError?: (error: Error, componentStack: string) => void;
+    /**
+     * Tag this boundary with a human-readable name, forwarded as an attribute
+     * on the captured payload.
+     */
+    name?: string;
+}
+interface State {
+    error: Error | null;
+    /**
+     * Mirror of `errorTracker.isEnabled()`, kept in state so the boundary
+     * re-renders when remote config toggles error tracking at runtime. Optional
+     * because some state updates (e.g. getDerivedStateFromError) only set `error`;
+     * an unset value is treated as enabled (the boundary keeps protecting).
+     */
+    enabled?: boolean;
+}
+/**
+ * React error boundary that forwards caught render/commit errors to the
+ * Conviva error tracker with `errorSource: 'errorBoundary'`.
+ *
+ * Design notes:
+ *  - Marks the error object in the tracker's DedupGuard BEFORE dispatch so
+ *    the global handler (if the error re-throws up the tree) does not send
+ *    the same error twice.
+ *  - Reset keys mirror the well-known react-error-boundary prop contract.
+ */
+declare class ConvivaErrorBoundary extends React$1.Component<ConvivaErrorBoundaryProps, State> {
+    state: State;
+    /** Cleanup for the enable-state subscription; set in componentDidMount. */
+    private unsubscribeEnabled;
+    /** Reads the tracker enable flag defensively (never throws). */
+    private static readEnabled;
+    static getDerivedStateFromError(error: Error): Partial<State>;
+    componentDidMount(): void;
+    componentWillUnmount(): void;
+    componentDidCatch(error: Error, info: {
+        componentStack: string;
+    }): void;
+    componentDidUpdate(prevProps: ConvivaErrorBoundaryProps): void;
+    reset: () => void;
+    render(): React$1.ReactNode;
+}
+
+/**
+ * Prevents the same Error object from being reported twice when captured by
+ * multiple hooks (e.g. ErrorUtils.setGlobalHandler runs, then a parent
+ * ErrorBoundary's componentDidCatch runs for the same throw).
+ *
+ * Strategy:
+ *  - Error instances tracked via WeakSet so GC is automatic (no leak).
+ *  - Non-Error thrown primitives delegated to PrimitiveDedupStore, since
+ *    primitives cannot be WeakSet keys.
+ */
+declare class DedupGuard {
+    private seenObjects;
+    private readonly primitives;
+    constructor(primitiveTtlMs?: number, maxPrimitives?: number);
+    /** true if this thrown value was already seen within the TTL window. */
+    isDuplicate(err: unknown): boolean;
+    /** Call after dispatching so subsequent captures of the same throw are suppressed. */
+    markSeen(err: unknown): void;
+    /** Test hook — clears all seen state. Not part of the public API. */
+    _reset(): void;
+}
+
+/**
+ * Per-session sliding-window + circuit-breaker rate limiter.
+ *
+ * Two-phase design (mirrors the Conviva JS horizontal tracker):
+ *  - CLOSED : up to `maxEvents` events allowed in any rolling `windowMs` window.
+ *  - OPEN   : once the window limit is exceeded, the circuit opens for
+ *             `disconnectMs` and all subsequent events are dropped — even if
+ *             the sliding window would otherwise allow them. This prevents
+ *             a storm of duplicates from resuming immediately after the
+ *             window slides.
+ */
+declare class RateLimiter {
+    private ringBuffer;
+    private windowStart;
+    private maxEvents;
+    private windowMs;
+    private disconnectMs;
+    private circuitOpenUntil;
+    constructor(maxEvents: number, windowMs: number, disconnectMs: number);
+    /**
+     * Returns true when an event is allowed to proceed. Consumes a slot on
+     * allow. Caller must NOT consume a slot if the event is filtered out by a
+     * beforeCapture hook.
+     */
+    tryAcquire(now?: number): boolean;
+    /**
+     * Live update from remote config. Preserves in-flight state sensibly:
+     *  - Resets the window start only when maxEvents changes (buffer is resized).
+     *  - Does NOT close an already-open circuit early: new disconnectMs applies
+     *    from the next time the circuit opens.
+     */
+    updateConfig(maxEvents: number, windowMs: number, disconnectMs: number): void;
+    /** true when the circuit is currently OPEN (i.e. all events dropped). */
+    isOpen(now?: number): boolean;
+    /** Test hook — clears all state. Not part of the public API. */
+    _reset(): void;
+    private sanitizeMaxEvents;
+    private sanitizePositive;
+}
+
+/**
+ * Singleton error tracker. Owns all capture plugins, rate limiting,
+ * deduplication, user-id propagation, and bridge dispatch.
+ *
+ * Lifetime:
+ *  - Constructed as an ES module singleton (`export const errorTracker = ...`)
+ *    so it can be imported by plugins and the ErrorBoundary without having a
+ *    reference threaded through props.
+ *  - `_initFromTracker()` is called by the SDK init code path. Subsequent
+ *    re-calls apply the new config and reinstall hooks via `_applyHookState`,
+ *    so capture-flag changes (captureGlobalErrors, captureUnhandledRejections)
+ *    and enable/disable transitions take effect immediately.
+ *  - `setEnabled()` and `_updateFromRemoteConfig()` route through the same
+ *    `_applyHookState` helper so runtime toggles match init semantics.
+ *  - `teardown()` uninstalls hooks and is called on SDK cleanup/removeAll.
+ */
+declare class ConvivaErrorTracker {
+    private config;
+    private bridge;
+    private rateLimiter;
+    private dedup;
+    private pluginCleanups;
+    private installed;
+    private attributes;
+    private enabledListeners;
+    constructor();
+    /**
+     * Called from src/api.ts on createTracker(). Wires the consumer config and
+     * installs all capture hooks. Safe to call multiple times — config always
+     * reflects the latest call, and capture-hook flags (captureGlobalErrors,
+     * captureUnhandledRejections, enabled) are applied on every call by
+     * tearing down the existing hooks and reinstalling them with the updated
+     * flags via `_applyHookState`.
+     */
+    _initFromTracker(cfg: ErrorTrackingConfiguration | undefined): void;
+    /**
+     * Aligns plugin install state with the current `config.enabled` /
+     * captureGlobalErrors / captureUnhandledRejections flags. Always tears
+     * down existing hooks first so flag changes take effect immediately:
+     *  - enabled:false → uninstall all plugins, clear INSTALL_FLAG.
+     *  - enabled:true  → uninstall + reinstall per current capture flags.
+     *
+     * HMR / hot-reload safety: cleanup handles are read from
+     * `globalThis[INSTALL_FLAG]` rather than only from `this.pluginCleanups`,
+     * so a new tracker instance constructed by a re-evaluated module (Fast
+     * Refresh, dev-server reload) still tears down the previous instance's
+     * handlers instead of chaining a new one on top of the old one.
+     *
+     * Plugin installation is deferred until initialisation via
+     * `installPlugins()`, but the plugin modules themselves are imported when
+     * this tracker module is loaded.
+     */
+    private _applyHookState;
+    /**
+     * Runs every plugin cleanup (preferring the global-slot copy over
+     * `this.pluginCleanups` so an HMR-swapped instance can still tear down the
+     * previous incarnation's handlers), then clears local state and the global
+     * install slot. Used by both `_applyHookState` (before reinstall) and
+     * `teardown` (final shutdown).
+     */
+    private _drainPluginCleanups;
+    /**
+     * Current master enable state. Read by ConvivaErrorBoundary to decide whether
+     * to intercept (enabled) or pass the error through (disabled).
+     */
+    isEnabled(): boolean;
+    /**
+     * Subscribe to master enable-state changes. The listener is invoked with the
+     * current `enabled` value whenever it may have changed. Returns an
+     * unsubscribe function. Never throws.
+     */
+    onEnabledChange(listener: (enabled: boolean) => void): () => void;
+    /** Notifies enable-state listeners with the current value. Fail-silent. */
+    private _notifyEnabledChange;
+    /**
+     * Uninstalls every capture hook and clears internal state. Idempotent.
+     * Called from src/api.ts on removeAllTrackers() / cleanup().
+     *
+     * Drains cleanups from BOTH `this.pluginCleanups` and the global install
+     * slot so an HMR-swapped instance can still tear down handlers that were
+     * registered by a previous incarnation of this module.
+     */
+    teardown(): void;
+    /**
+     * Public toggle used by consumer API + remote config. Routes through
+     * `_applyHookState` so transitions in either direction are observable:
+     * enabled:false uninstalls plugins and clears INSTALL_FLAG, while
+     * enabled:true installs them per current capture flags.
+     */
+    setEnabled(enabled: boolean): void;
+    setRateLimitingEnabled(enabled: boolean): void;
+    addAttribute(key: string, value: string | number | boolean): void;
+    removeAttribute(key: string): void;
+    /** Called from src/subject.ts when setUserId runs. Kept internal. */
+    _setUserId(id: string | null): void;
+    /**
+     * Remote-config update point. Not yet wired to a backend, but in place for
+     * future milestones. All fields optional; only provided ones override.
+     *
+     * If any of `enabled`, `captureGlobalErrors`, or `captureUnhandledRejections`
+     * actually change, `_applyHookState` is invoked so plugin install state
+     * matches the new config. This keeps remote-driven enable/disable and
+     * capture toggles observable at the hook layer (not just at dispatch).
+     */
+    _updateFromRemoteConfig(patch: Partial<ErrorTrackingInternalConfig> | null | undefined): void;
+    /**
+     * Applies the three hook-affecting boolean flags from a remote-config patch
+     * via the `HOOK_BOOLEAN_KEYS` table. Returns true when any flag actually
+     * changed so the caller can decide whether to reinstall plugin hooks.
+     */
+    private _applyHookBooleanPatch;
+    /**
+     * Applies the rate-limit subset of a remote-config patch to the internal
+     * config and updates the RateLimiter when any value changed.
+     */
+    private _applyRateLimitPatch;
+    /**
+     * Internal entry point called from each plugin. Responsibilities:
+     *  1. Honour dev-suppression and `enabled`.
+     *  2. Honour per-source capture flags so runtime toggles work even when a
+     *     plugin's teardown is best-effort (e.g. Hermes).
+     *  3. Build + truncate the payload via private helpers.
+     *  4. Run beforeCapture hook (fail-open).
+     *  5. Bridge availability check.
+     *  6. Rate-limit (after hook & bridge check — filtered / undeliverable
+     *     events don't consume tokens).
+     *  7. Forward to bridge adapter.
+     *
+     * NEVER throws. The pre-payload gates and the post-payload pipeline are
+     * extracted into `_acquireBridge` and `_passesDispatchPipeline` so this
+     * method's cyclomatic complexity stays low.
+     */
+    _dispatch(args: {
+        error: unknown;
+        errorSource: ErrorSource;
+        isFatal: boolean;
+        isHandled: boolean;
+        componentStack?: string;
+        severityOverride?: ErrorSeverity;
+        extraAttributes?: Record<string, string | number | boolean>;
+    }): void;
+    /**
+     * Consolidates the pre-payload gates (enabled / dev-suppression / per-source
+     * capture flag / bridge presence) into a single check. Returns the captured
+     * bridge reference when dispatch should proceed, or `null` to short-circuit.
+     *
+     * Capturing the bridge here means the dispatch path is stable against
+     * re-entrant mutation (e.g. a beforeCapture hook calling `_setBridge`) and
+     * TypeScript can narrow `bridge` to `BridgeAdapter` for the rest of `_dispatch`.
+     */
+    private _acquireBridge;
+    /**
+     * Final post-payload gating: runs the beforeCapture hook (fail-open per D8),
+     * confirms the bridge is still available, and consumes a rate-limit slot.
+     * Returns `true` when the payload should be forwarded, `false` when dropped.
+     *
+     * Filtered / undeliverable events never consume a rate-limit token —
+     * `tryAcquire` is the LAST gate before forwarding.
+     */
+    private _passesDispatchPipeline;
+    /**
+     * Final hop to the native bridge. No session/subject enrichment happens
+     * here: session linkage is owned by the native Conviva/Snowplow tracker,
+     * which attaches a `client_session` context entity to every event emitted
+     * from `trackCustomEvent` / `track(SelfDescribing(...))` when
+     * `sessionContext: true` (the default). Adding a JS-side session fetch
+     * would either duplicate that entity or produce a stale value across
+     * native session rollovers, so the JS pipeline deliberately stays out
+     * of it. Kept as a separate method purely as a test seam.
+     */
+    private _forwardToBridge;
+    /** @internal — test/introspection accessor. */
+    _getConfig(): ErrorTrackingInternalConfig;
+    /** @internal — test/introspection accessor. */
+    _getBridge(): BridgeAdapter | null;
+    /** @internal — test/introspection accessor. */
+    _getDedupGuard(): DedupGuard;
+    /** @internal — test/introspection accessor. */
+    _getRateLimiter(): RateLimiter;
+    /** @internal — Bridge replacement (tests only). */
+    _setBridge(bridge: BridgeAdapter | null): void;
+    /** @internal — hook install seam. See installPlugins. */
+    get installedState(): boolean;
+    /**
+     * Installs global-error-handler + promise-rejection plugins. Lazy-required
+     * so unit tests do not pull in RN / ErrorUtils side effects at module load.
+     *
+     * The ErrorBoundary component is NOT installed here — it is a React
+     * component the consumer wraps around their tree.
+     */
+    private installPlugins;
+    /** @internal — resolves once any pending install completes (test helper). */
+    _waitForInstall(): Promise<void>;
+}
+/** Module-level singleton shared by api.ts, subject.ts, and plugins. */
+declare const errorTracker: ConvivaErrorTracker;
+
+/**
+ * In-memory bridge adapter used for unit / integration tests and the DemoApp
+ * manual-test harness. Collects every payload the error tracker would have
+ * sent to native so tests can assert on structure and ordering.
+ */
+declare class MockBridgeAdapter implements BridgeAdapter {
+    payloads: JsErrorPayload[];
+    isAvailable(): boolean;
+    reportJsError(payload: JsErrorPayload): void;
+    /** Clears captured payloads. Useful between tests. */
+    clear(): void;
+}
+
 /**
  * Creates a React Native Tracker object
  *
- * @param networkConfig {Object} - The network configuration
- * @param control {Array} - The tracker controller configuration
+ * @param customerKey {string} - The Conviva customer key for the application
+ * @param appName {string} - The application name reported with events
+ * @param controllerConfig {TrackerControllerConfiguration} - Optional tracker controller configuration
  * @returns The tracker object
  */
 declare function createTracker(customerKey: string, appName: string, controllerConfig?: TrackerControllerConfiguration): ReactNativeTracker;
@@ -936,11 +1504,61 @@ declare function getClientId(): Promise<string>;
  * @returns - A boolean promise
  */
 declare function setClientId(clientId: string): Promise<boolean>;
+/**
+ * Starts (or resumes) Conviva Session Replay capture for the current session.
+ * Useful for resuming capture after it was paused via {@link stopReplay} —
+ * for example, after dismissing a WebView, which cannot be captured.
+ *
+ * @returns - A void promise
+ */
+declare function startReplay(): Promise<void>;
+/**
+ * Pauses Conviva Session Replay capture for the current session.
+ * Call before presenting content that should not be captured (e.g. a WebView),
+ * then resume with {@link startReplay}.
+ *
+ * @returns - A void promise
+ */
+declare function stopReplay(): Promise<void>;
 declare const autocaptureNavigationTrack: (...args: any[]) => any;
-
-declare const _default: {
-    convivaTouchableAutoTrack: (TouchableComponent: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
-    withReactNavigationAutotrack: (AppContainer: any) => react.ForwardRefExoticComponent<react.RefAttributes<any>>;
+/**
+ * Standalone top-level trackError that can be imported without a tracker
+ * instance reference. Uses the default "CAT" namespace, mirroring the
+ * tracker method created inside createTracker().
+ *
+ * Routing is driven by `argmap.isFatal`: fatal errors are reported through the
+ * application-error pipeline (CRASH classification), while non-fatal errors are
+ * reported as a dedicated non-fatal error event. Always resolves — failures are
+ * swallowed so consumer flow is never disrupted.
+ *
+ * @param argmap {ErrorEventProps} - The error payload (message, stackTrace, isFatal, attributes, …)
+ * @param contexts {EventContext[]} - Optional custom contexts attached to the event
+ * @returns - A void promise
+ */
+declare function trackError(argmap: ErrorEventProps, contexts?: EventContext[]): Promise<void>;
+/**
+ * Native manual-masking sentinel for Conviva Session Replay.
+ *
+ * Carried via the React Native `nativeID` prop on both Android and iOS.
+ * The iOS replay SDK reads `nativeID` / `nativeId` directly from the view
+ * (Paper / Fabric respectively), so no accessibility props are needed.
+ * `nativeID` does not collide with E2E selectors (`testID`) or screen
+ * readers (`accessibilityLabel`) and blocks view flattening without
+ * requiring `collapsable: false`.
+ */
+declare const CR_NO_CAPTURE = "cr-no-capture";
+/**
+ * Spread on the View or Text that holds sensitive content (Paper + Fabric):
+ *   <Text {...crNoCaptureProps}>Secret</Text>
+ *   <View {...crNoCaptureProps}><SensitiveBlock /></View>
+ */
+declare const crNoCaptureProps: {
+    nativeID: string;
 };
 
-export { Basis, BufferOption, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, LogLevel, MessageNotificationProps, NetworkConfiguration, PageViewProps, ReactNativeTracker, RevenueEventItemProps, RevenueEventProps, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, cleanup, createTracker, _default as default, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, withReactNavigationAutotrack };
+declare const _default: {
+    convivaTouchableAutoTrack: (TouchableComponent: any) => React$1.ForwardRefExoticComponent<React$1.RefAttributes<any>>;
+    withReactNavigationAutotrack: (AppContainer: any) => React$1.ForwardRefExoticComponent<React$1.RefAttributes<any>>;
+};
+
+export { Basis, BridgeAdapter, BufferOption, CR_NO_CAPTURE, ConsentDocument, ConsentGrantedProps, ConsentWithdrawnProps, ConvivaErrorBoundary, ConvivaErrorTracker, DeepLinkReceivedProps, DevicePlatform, EcommerceItem, EcommerceTransactionProps, EmitterConfiguration, ErrorEventProps, ErrorSeverity, ErrorSource, ErrorTrackingConfiguration, EventContext, GCConfiguration, GdprConfiguration, GlobalContext, HttpMethod, JsEngine, JsErrorPayload, LogLevel, MessageNotificationProps, MockBridgeAdapter, NetworkConfiguration, PageViewProps, ReactNativeTracker, RevenueEventItemProps, RevenueEventProps, ScreenSize, ScreenViewProps, SelfDescribing, SessionConfiguration, SessionReplayConfiguration, StructuredProps, SubjectConfiguration, TimingProps, TrackerConfiguration, TrackerControllerConfiguration, Trigger, autocaptureNavigationTrack, cleanup, crNoCaptureProps, createTracker, _default as default, errorTracker, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, startReplay, stopReplay, trackError, withReactNavigationAutotrack };

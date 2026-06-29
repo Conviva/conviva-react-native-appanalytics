@@ -293,4 +293,60 @@
 }
 #endif
 
+#if !TARGET_OS_TV
++ (CATSessionReplayConfiguration *) mkSessionReplayConfig:(NSDictionary *) replayConfig {
+    NSMutableDictionary *json = [NSMutableDictionary dictionary];
+
+    if (replayConfig[@"enabled"] != nil) json[@"enabled"] = replayConfig[@"enabled"];
+    if (replayConfig[@"logging"] != nil) json[@"logging"] = replayConfig[@"logging"];
+    if (replayConfig[@"sampling"] != nil) json[@"sampling"] = [self buildReplaySamplingJson:replayConfig[@"sampling"]];
+    if (replayConfig[@"networkConfiguration"] != nil) json[@"networkConfiguration"] = [self buildReplayNetworkJson:replayConfig[@"networkConfiguration"]];
+    if (replayConfig[@"emitterConfiguration"] != nil) json[@"emitterConfiguration"] = [self buildReplayEmitterJson:replayConfig[@"emitterConfiguration"]];
+    if (replayConfig[@"mobRecorderConfiguration"] != nil) json[@"mobRecorderConfiguration"] = [self buildReplayRecorderJson:replayConfig[@"mobRecorderConfiguration"]];
+
+    // Skip if no keys were recognised (empty config) or if enabled is explicitly false.
+    if (json.count == 0) return nil;
+    NSNumber *enabledVal = json[@"enabled"];
+    if (enabledVal != nil && !enabledVal.boolValue) return nil;
+    CATSessionReplayConfiguration *configuration = [[CATSessionReplayConfiguration alloc] init];
+    configuration.dict = json;
+    return configuration;
+}
+
++ (NSMutableDictionary *) buildReplaySamplingJson:(NSDictionary *) sampling {
+    NSMutableDictionary *samplingJson = [NSMutableDictionary dictionary];
+    if (sampling[@"pct"] != nil) samplingJson[@"pct"] = sampling[@"pct"];
+    return samplingJson;
+}
+
++ (NSMutableDictionary *) buildReplayNetworkJson:(NSDictionary *) networkConfig {
+    NSMutableDictionary *networkJson = [NSMutableDictionary dictionary];
+    if (networkConfig[@"endpoint"] != nil) networkJson[@"endpoint"] = networkConfig[@"endpoint"];
+    return networkJson;
+}
+
++ (NSMutableDictionary *) buildReplayEmitterJson:(NSDictionary *) emitterConfig {
+    NSMutableDictionary *emitterJson = [NSMutableDictionary dictionary];
+    for (NSString *key in @[@"dataMode", @"uploadInterval", @"policyExpiryTime",
+                             @"flushAt", @"maxBatchSize", @"maxQueueSize"]) {
+        [self copyKey:key from:emitterConfig to:emitterJson];
+    }
+    return emitterJson;
+}
+
++ (NSMutableDictionary *) buildReplayRecorderJson:(NSDictionary *) recorderConfig {
+    NSMutableDictionary *recorderJson = [NSMutableDictionary dictionary];
+    for (NSString *key in @[@"maskAllInputs", @"maskAllImages", @"maskAllSystemViews",
+                             @"maskSandboxedSystemViews", @"throttleDelayMs",
+                             @"compressionQuality", @"maskInputOptions"]) {
+        [self copyKey:key from:recorderConfig to:recorderJson];
+    }
+    return recorderJson;
+}
+
++ (void) copyKey:(NSString *) key from:(NSDictionary *) src to:(NSMutableDictionary *) dst {
+    if (src[key] != nil) dst[key] = src[key];
+}
+#endif
+
 @end

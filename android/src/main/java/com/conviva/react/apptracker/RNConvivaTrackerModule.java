@@ -8,6 +8,7 @@ import com.conviva.apptracker.configuration.GlobalContextsConfiguration;
 import com.conviva.apptracker.configuration.NetworkConfiguration;
 import com.conviva.apptracker.configuration.RemoteConfiguration;
 import com.conviva.apptracker.configuration.SessionConfiguration;
+import com.conviva.apptracker.configuration.SessionReplayConfiguration;
 import com.conviva.apptracker.configuration.SubjectConfiguration;
 import com.conviva.apptracker.configuration.TrackerConfiguration;
 import com.conviva.apptracker.controller.TrackerController;
@@ -44,8 +45,10 @@ import org.json.JSONObject;
 import org.json.simple.JSONValue;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -190,6 +193,15 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
                 ReadableMap clidSyncConfig = argmap.getMap("clidSyncConfig");
                 ClidSyncConfiguration clidSyncConfiguration = ConfigUtil.mkClidSyncConfiguration(clidSyncConfig);
                 controllers.add(clidSyncConfiguration);
+            }
+
+            // SessionReplayConfiguration
+            if (argmap.hasKey("sessionReplayConfig")) {
+                ReadableMap src = argmap.getMap("sessionReplayConfig");
+                if (src != null) {
+                    SessionReplayConfiguration replayConfiguration = ConfigUtil.mkSessionReplayConfiguration(src);
+                    if (replayConfiguration != null) controllers.add(replayConfiguration);
+                }
             }
 
             String remoteConfigUrl = RemoteConfiguration.DEFAULT_ENDPOINT;
@@ -1087,7 +1099,143 @@ public class RNConvivaTrackerModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void startReplay(Promise promise) {
+        try {
+            ConvivaAppAnalytics.startReplay();
+            promise.resolve(true);
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void stopReplay(Promise promise) {
+        try {
+            ConvivaAppAnalytics.stopReplay();
+            promise.resolve(true);
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
     private TrackerController getTracker(String namespace) {
         return namespace == null ? ConvivaAppAnalytics.getDefaultTracker() : ConvivaAppAnalytics.getTracker(namespace);
+    }
+
+    /**
+     * JS → native JS-bundle-identity entry point.
+     *
+     * Forwards the JS bundle identity map (jsBundleSource / jsBundleId /
+     * jsBundleChannel / jsBundleLabel / jsEngine) to the native SDK so it can be
+     * attached to subsequent events.
+     *
+     * Never throws.
+     */
+    @ReactMethod
+    public void setJsBundleInfo(ReadableMap details, Promise promise) {
+        try {
+            String namespace = details.getString("tracker");
+            TrackerController trackerController = getTracker(namespace);
+            if (trackerController != null) {
+                ReadableMap infoMap = details.getMap("info");
+                if (infoMap != null) {
+                    trackerController.setJsBundleInfo(infoMap.toHashMap());
+                }
+                promise.resolve(true);
+            } else {
+                promise.reject("ERROR", "TrackerController is null");
+            }
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    /**
+     * Returns the verbatim remote-config JSON last applied by the native SDK
+     * (from cache, default, or a remote fetch), or null if none has been
+     * applied yet. The JS layer parses this to enable/disable error-tracking
+     * features and reconfigure the rate limiter — the native side performs no
+     * error-tracking gating. D7: never throws (rejects only on unexpected
+     * failure so the JS caller can fall back to its defaults).
+     */
+    @ReactMethod
+    public void getRemoteConfig(Promise promise) {
+        try {
+            promise.resolve(ConvivaAppAnalytics.getAppliedRemoteConfigJson());
+        } catch (Throwable t) {
+            promise.reject("ERROR", t.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void reportJsError(String payloadJson) {
+        try {
+            if (payloadJson == null || payloadJson.length() == 0) {
+                return;
+            }
+            JSONObject json = new JSONObject(payloadJson);
+
+            boolean isFatal = json.optBoolean("isFatal", false);
+
+            TrackerController trackerController = getTracker("CAT");
+            if (trackerController == null) {
+                trackerController = ConvivaAppAnalytics.getDefaultTracker();
+            }
+            if (trackerController == null) {
+                return;
+            }
+
+            //Fatal errors are tracked by the native SDK's ExceptionHandler.
+            if (!isFatal) {
+                // Non-fatal JS error — custom event with descriptive keys.
+                // This is the dedicated metric surface that does not affect
+                // crash-rate dashboards.
+                HashMap<String, Object> eventData = new HashMap<>();
+                eventData.put("message",        json.optString("message", ""));
+                eventData.put("errorType",       json.optString("errorType", ""));
+                eventData.put("stackTrace",      json.optString("stackTrace", ""));
+                eventData.put("timestamp",       json.optLong("timestamp", 0L));
+                eventData.put("isFatal",         false);
+                eventData.put("isHandled",       json.optBoolean("isHandled", true));
+                eventData.put("errorSource",     json.optString("errorSource", ""));
+                eventData.put("severity",        json.optString("severity", ""));
+                eventData.put("componentStack",  json.optString("componentStack", ""));
+                eventData.put("jsEngine",        json.optString("jsEngine", "unknown"));
+
+                if (json.has("lineNumber") && !json.isNull("lineNumber")) {
+                    eventData.put("lineNumber", json.opt("lineNumber"));
+                }
+                if (json.has("lineColumn") && !json.isNull("lineColumn")) {
+                    eventData.put("lineColumn", json.opt("lineColumn"));
+                }
+                if (json.has("fileName") && !json.isNull("fileName")) {
+                    eventData.put("fileName", json.opt("fileName"));
+                }
+                if (json.has("bundleId") && !json.isNull("bundleId")) {
+                    eventData.put("bundleId", json.opt("bundleId"));
+                }
+
+                // Consumer attributes — all keys not in the known set.
+                HashSet<String> knownKeys = new HashSet<>(Arrays.asList(
+                    "timestamp", "message", "errorType", "stackTrace",
+                    "isFatal", "isHandled", "errorSource", "severity",
+                    "componentStack", "jsEngine",
+                    "lineNumber", "lineColumn", "fileName", "bundleId"
+                ));
+                Iterator<String> keys = json.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (!knownKeys.contains(key)) {
+                        eventData.put(key, json.opt(key));
+                    }
+                }
+
+                trackerController.trackCustomEvent("conviva_non_fatal_error",
+                    JSONValue.toJSONString(eventData));
+            }
+        } catch (Throwable t) {
+            // D7: error-reporting path must never throw.
+        }
     }
 }

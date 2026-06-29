@@ -4,6 +4,7 @@ import com.conviva.apptracker.configuration.EmitterConfiguration;
 import com.conviva.apptracker.configuration.GdprConfiguration;
 import com.conviva.apptracker.configuration.GlobalContextsConfiguration;
 import com.conviva.apptracker.configuration.SessionConfiguration;
+import com.conviva.apptracker.configuration.SessionReplayConfiguration;
 import com.conviva.apptracker.configuration.SubjectConfiguration;
 import com.conviva.apptracker.configuration.TrackerConfiguration;
 import com.conviva.apptracker.internal.tracker.ClidSyncConfiguration;
@@ -18,6 +19,8 @@ import com.conviva.apptracker.util.TimeMeasure;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -359,5 +362,83 @@ public class ConfigUtil {
         GlobalContextsConfiguration gcConfiguration = new GlobalContextsConfiguration(contextGens);
 
         return gcConfiguration;
+    }
+
+    /**
+     * Builds a SessionReplayConfiguration from the JS sessionReplayConfig map.
+     * Each known key is read explicitly, mirroring the pattern used by all other mk* factories.
+     * Sub-config blocks are delegated to private helpers to keep cyclomatic complexity low.
+     */
+    public static SessionReplayConfiguration mkSessionReplayConfiguration(ReadableMap src) throws Exception {
+        JSONObject json = new JSONObject();
+
+        if (src.hasKey("enabled")) json.put("enabled", src.getBoolean("enabled"));
+        if (src.hasKey("logging")) json.put("logging", src.getBoolean("logging"));
+        if (src.hasKey("sampling")) json.put("sampling", buildReplaySamplingJson(src.getMap("sampling")));
+        if (src.hasKey("networkConfiguration")) json.put("networkConfiguration", buildReplayNetworkJson(src.getMap("networkConfiguration")));
+        if (src.hasKey("emitterConfiguration")) json.put("emitterConfiguration", buildReplayEmitterJson(src.getMap("emitterConfiguration")));
+        if (src.hasKey("mobRecorderConfiguration")) json.put("mobRecorderConfiguration", buildReplayRecorderJson(src.getMap("mobRecorderConfiguration")));
+
+        // Skip if no keys were recognised (empty config) or if enabled is explicitly false.
+        if (json.length() == 0) return null;
+        if (json.has("enabled") && !json.optBoolean("enabled")) return null;
+        return new SessionReplayConfiguration(json);
+    }
+
+    private static JSONObject buildReplaySamplingJson(ReadableMap sampling) throws Exception {
+        JSONObject samplingJson = new JSONObject();
+        if (sampling != null && sampling.hasKey("pct")) samplingJson.put("pct", (int) sampling.getDouble("pct"));
+        return samplingJson;
+    }
+
+    private static JSONObject buildReplayNetworkJson(ReadableMap networkConfig) throws Exception {
+        JSONObject networkJson = new JSONObject();
+        if (networkConfig != null && networkConfig.hasKey("endpoint")) networkJson.put("endpoint", networkConfig.getString("endpoint"));
+        return networkJson;
+    }
+
+    private static JSONObject buildReplayEmitterJson(ReadableMap cfg) throws Exception {
+        JSONObject j = new JSONObject();
+        if (cfg == null) return j;
+        copyStrKey(j, cfg, "dataMode");
+        copyIntKey(j, cfg, "uploadInterval");
+        copyIntKey(j, cfg, "policyExpiryTime");
+        copyIntKey(j, cfg, "flushAt");
+        copyIntKey(j, cfg, "maxBatchSize");
+        copyIntKey(j, cfg, "maxQueueSize");
+        return j;
+    }
+
+    private static JSONObject buildReplayRecorderJson(ReadableMap cfg) throws Exception {
+        JSONObject j = new JSONObject();
+        if (cfg == null) return j;
+        copyBoolKey(j, cfg, "maskAllInputs");
+        copyBoolKey(j, cfg, "maskAllImages");
+        copyBoolKey(j, cfg, "maskAllSystemViews");
+        copyBoolKey(j, cfg, "maskSandboxedSystemViews");
+        copyIntKey(j, cfg, "throttleDelayMs");
+        copyIntKey(j, cfg, "compressionQuality");
+        if (cfg.hasKey("maskInputOptions")) j.put("maskInputOptions", buildMaskInputOptionsJson(cfg.getArray("maskInputOptions")));
+        return j;
+    }
+
+    private static JSONArray buildMaskInputOptionsJson(ReadableArray options) {
+        JSONArray optionsJson = new JSONArray();
+        if (options != null) {
+            for (int i = 0; i < options.size(); i++) optionsJson.put(options.getString(i));
+        }
+        return optionsJson;
+    }
+
+    private static void copyBoolKey(JSONObject dest, ReadableMap src, String key) throws Exception {
+        if (src.hasKey(key)) dest.put(key, src.getBoolean(key));
+    }
+
+    private static void copyIntKey(JSONObject dest, ReadableMap src, String key) throws Exception {
+        if (src.hasKey(key)) dest.put(key, (int) src.getDouble(key));
+    }
+
+    private static void copyStrKey(JSONObject dest, ReadableMap src, String key) throws Exception {
+        if (src.hasKey(key)) dest.put(key, src.getString(key));
     }
 }

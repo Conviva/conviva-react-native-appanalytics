@@ -27,9 +27,10 @@
 #import <ConvivaAppAnalytics/CATGDPRConfiguration.h>
 #import <ConvivaAppAnalytics/CATGlobalContextsConfiguration.h>
 #if !TARGET_OS_TV
-// CATClientIdSyncConfiguration is gated to SNOWPLOW_TARGET_IOS in the SDK,
-// so it is not declared on tvOS. Mirror that here to keep the wrapper
-// tvOS-buildable; the +mkClidSyncConfig: factory is gated identically.
+// CATSessionReplayConfiguration and CATClientIdSyncConfiguration are both
+// gated to SNOWPLOW_TARGET_IOS in the SDK and are not declared on tvOS.
+// Mirror the gate here to keep the wrapper tvOS-buildable.
+#import <ConvivaAppAnalytics/CATSessionReplayConfiguration.h>
 #import <ConvivaAppAnalytics/CATClientIdSyncConfiguration.h>
 #endif
 
@@ -48,6 +49,21 @@
 + (CATGDPRConfiguration *) mkGdprConfig:(NSDictionary *) gdprConfig;
 
 + (CATGlobalContextsConfiguration *) mkGCConfig:(NSArray *) gcConfig;
+
+#if !TARGET_OS_TV
+/**
+ * Builds a CATSessionReplayConfiguration from the JS sessionReplayConfig dictionary.
+ * The JS config mirrors the native nested JSON schema and is passed through directly.
+ * Not declared on tvOS - screen capture is not a tvOS capability.
+ */
++ (nullable CATSessionReplayConfiguration *) mkSessionReplayConfig:(NSDictionary *) replayConfig;
+
++ (NSMutableDictionary *) buildReplaySamplingJson:(NSDictionary *) sampling;
++ (NSMutableDictionary *) buildReplayNetworkJson:(NSDictionary *) networkConfig;
++ (NSMutableDictionary *) buildReplayEmitterJson:(NSDictionary *) emitterConfig;
++ (NSMutableDictionary *) buildReplayRecorderJson:(NSDictionary *) recorderConfig;
++ (void) copyKey:(NSString *) key from:(NSDictionary *) src to:(NSMutableDictionary *) dst;
+#endif
 
 #if !TARGET_OS_TV
 + (CATClientIdSyncConfiguration *) mkClidSyncConfig:(NSDictionary *) clidSyncConfig;

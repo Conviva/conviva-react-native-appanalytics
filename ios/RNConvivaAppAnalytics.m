@@ -172,6 +172,26 @@ RCT_EXPORT_METHOD(createTracker:
     }
 #endif
 
+#if !TARGET_OS_TV
+    // SessionReplayConfiguration - screen capture is not available on tvOS;
+    // guard mirrors the clidSyncConfig pattern above.
+    NSObject *replayArg = [argmap objectForKey:@"sessionReplayConfig"];
+    if (replayArg != nil && [replayArg isKindOfClass:NSDictionary.class]) {
+        @try {
+            CATSessionReplayConfiguration *replayConfiguration = [RNConfigUtils mkSessionReplayConfig:(NSDictionary *)replayArg];
+            if (replayConfiguration != nil) {
+                [controllers addObject:replayConfiguration];
+            }
+        } @catch (NSException *exception) {
+            // mkSessionReplayConfig: does not catch exceptions internally; this
+            // try/catch ensures any unexpected failure never aborts createTracker:.
+            // The tracker will still be created using whatever configurations
+            // are already queued.
+            NSLog(@"[RNConvivaAppAnalytics] createTracker: ignoring exception while building sessionReplayConfig: %@", exception);
+        }
+    }
+#endif
+
     id<CATTrackerController> tracker = nil;
     if(nil != networkConfiguration){
         tracker = [CATAppAnalytics createTrackerWithCustomerKey:customerKey
@@ -1250,6 +1270,181 @@ RCT_EXPORT_METHOD(setClientId:
     return [namespace isEqual:[NSNull null]] ? [CATAppAnalytics defaultTracker] : [CATAppAnalytics trackerByNamespace:namespace];
 }
 
+// -----------------------------------------------------------------------------
+// JS → native JS-bundle-identity entry point.
+//
+// Forwards the JS bundle identity map (jsBundleSource / jsBundleId /
+// jsBundleChannel / jsBundleLabel / jsEngine) to the native SDK so it is
+// attached to the Conviva app-context entity on every subsequent event.
+//
+// The underlying `-setJsBundleInfo:` is a newer addition to CATTrackerController
+// and may be absent in older ConvivaAppAnalytics versions. To stay BOTH
+// compile-safe (no hard dependency on the selector being declared) AND
+// runtime-safe (no crash on older SDKs), it is dispatched dynamically and only
+// invoked when the controller actually responds to it. D7: never throws.
+// -----------------------------------------------------------------------------
+RCT_EXPORT_METHOD(setJsBundleInfo:
+                  (NSDictionary *)details
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    @try {
+        NSString *namespace = [details objectForKey:@"tracker"];
+        id<CATTrackerController> trackerController = [self trackerByNamespace:namespace];
+
+        if (trackerController != nil) {
+            NSDictionary *info = [details objectForKey:@"info"];
+            SEL selector = NSSelectorFromString(@"setJsBundleInfo:");
+            if (info != nil && [(NSObject *)trackerController respondsToSelector:selector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                [(NSObject *)trackerController performSelector:selector withObject:info];
+#pragma clang diagnostic pop
+            }
+            resolve(@YES);
+        } else {
+            NSError *error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+            reject(@"ERROR", @"tracker with given namespace not found", error);
+        }
+    } @catch (NSException *exception) {
+        NSError *error = [NSError errorWithDomain:@"ConvivaAppAnalytics" code:200 userInfo:nil];
+        reject(@"ERROR", exception.reason ?: @"setJsBundleInfo failed", error);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// JS → native error-reporting entry point.
+//
+// Receives a single flat JSON string produced by the JS-side NativeBridgeAdapter
+// and handles NON-FATAL JS errors only:
+//
+//  - isFatal=false -> trackCustomEvent("conviva_non_fatal_error") with
+//    descriptive keys. Dedicated metric surface; does not affect crash-rate.
+//
+// Fatal JS errors are NOT handled here. They are owned by the native iOS SDK's
+// CATUnCaughtExceptionHandler, which detects RCTFatalException by name and emits
+// the fatal sp/ae/1-0-2 with programmingLanguage=JAVASCRIPT — mirroring the
+// Android native ExceptionHandler. The JS GlobalErrorHandlerPlugin gates fatal
+// dispatch off on iOS, so reporting a fatal from this bridge would double-report
+// against the native handler. See plan §7 / §7A.1 / §7A.4-B (D11 / D15).
+//
+// Web / Horizontal JS errors remain conviva_application_error — unchanged.
+//
+// D4-fix: thread-safe — no extra dispatch_queue needed.
+// D7: this method MUST NOT throw — every failure is swallowed silently.
+// -----------------------------------------------------------------------------
+RCT_EXPORT_METHOD(reportJsError:(NSString *)payloadJson) {
+    @try {
+        if (payloadJson == nil || payloadJson.length == 0) {
+            return;
+        }
+
+        NSError *parseError = nil;
+        NSData *data = [payloadJson dataUsingEncoding:NSUTF8StringEncoding];
+        id parsed = [NSJSONSerialization JSONObjectWithData:data
+                                                    options:0
+                                                      error:&parseError];
+        if (parseError || ![parsed isKindOfClass:[NSDictionary class]]) {
+            return; // malformed payload — fail silent (D7)
+        }
+        NSDictionary *json = (NSDictionary *)parsed;
+
+        BOOL isFatal = [json[@"isFatal"] boolValue];
+        id<CATTrackerController> tracker = [CATAppAnalytics defaultTracker];
+        if (tracker == nil) {
+            return;
+        }
+
+        // Fatal JS errors are owned by the native iOS SDK (CATUnCaughtExceptionHandler
+        // detects RCTFatalException and emits the fatal sp/ae/1-0-2). The bridge
+        // handles non-fatals only to avoid double-reporting. See plan §7A.4-B.
+        if (!isFatal) {
+            // Non-fatal JS error — custom event with descriptive keys.
+            NSMutableDictionary *eventData = [NSMutableDictionary dictionary];
+            eventData[@"message"]        = json[@"message"]        ?: @"";
+            eventData[@"errorType"]      = json[@"errorType"]      ?: @"";
+            eventData[@"stackTrace"]     = json[@"stackTrace"]     ?: @"";
+            eventData[@"timestamp"]      = json[@"timestamp"]      ?: @0;
+            eventData[@"isFatal"]        = @NO;
+            eventData[@"isHandled"]      = json[@"isHandled"]      ?: @YES;
+            eventData[@"errorSource"]    = json[@"errorSource"]    ?: @"";
+            eventData[@"severity"]       = json[@"severity"]       ?: @"";
+            eventData[@"componentStack"] = json[@"componentStack"] ?: @"";
+            eventData[@"jsEngine"]       = json[@"jsEngine"]       ?: @"unknown";
+
+            if (json[@"lineNumber"] && json[@"lineNumber"] != [NSNull null]) {
+                eventData[@"lineNumber"] = json[@"lineNumber"];
+            }
+            if (json[@"lineColumn"] && json[@"lineColumn"] != [NSNull null]) {
+                eventData[@"lineColumn"] = json[@"lineColumn"];
+            }
+            if (json[@"fileName"] && json[@"fileName"] != [NSNull null]) {
+                eventData[@"fileName"] = json[@"fileName"];
+            }
+            if (json[@"bundleId"] && json[@"bundleId"] != [NSNull null]) {
+                eventData[@"bundleId"] = json[@"bundleId"];
+            }
+
+            // Consumer attributes — all keys not in the known set.
+            NSSet *knownSet = [NSSet setWithArray:@[
+                @"timestamp", @"message", @"errorType", @"stackTrace", @"isFatal",
+                @"isHandled", @"errorSource", @"severity", @"componentStack",
+                @"lineNumber", @"lineColumn", @"fileName", @"bundleId", @"jsEngine"
+            ]];
+            for (NSString *key in json) {
+                if (![knownSet containsObject:key]) {
+                    id value = json[key];
+                    if (value != nil && value != [NSNull null]) {
+                        eventData[key] = value;
+                    }
+                }
+            }
+
+            [tracker trackCustomEvent:@"conviva_non_fatal_error" eventData:[eventData copy]];
+        }
+    } @catch (NSException *ignored) {
+        // D7: error-reporting path must never throw.
+    }
+}
+
+// -----------------------------------------------------------------------------
+// JS → native remote-config pull.
+//
+// Returns the verbatim last-applied remote-config JSON (or null) so the JS
+// RemoteConfigSync can parse error-tracking fields (exceptionAutotracking /
+// collectionRateLimit) that the native SDK does not expose as typed getters.
+// Mirrors the Android bridge's getRemoteConfig →
+// ConvivaAppAnalytics.getAppliedRemoteConfigJson().
+//
+// The underlying +[CATAppAnalytics appliedRemoteConfigJson] is a newer addition
+// and may be absent in older ConvivaAppAnalytics versions, so it is dispatched
+// dynamically (respondsToSelector:) — both compile-safe (no hard dependency on
+// the selector being declared) AND runtime-safe (no crash on older SDKs). When
+// the API is unavailable the method resolves null so JS falls back to its
+// defaults. D7: never throws.
+// -----------------------------------------------------------------------------
+RCT_EXPORT_METHOD(getRemoteConfig:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    @try {
+        NSString *configJson = nil;
+        SEL selector = NSSelectorFromString(@"appliedRemoteConfigJson");
+        if ([CATAppAnalytics respondsToSelector:selector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            id result = [CATAppAnalytics performSelector:selector];
+#pragma clang diagnostic pop
+            if ([result isKindOfClass:[NSString class]]) {
+                configJson = (NSString *)result;
+            }
+        }
+        // Resolves null when the native API is unavailable or no config has been
+        // applied yet — JS RemoteConfigSync then keeps its current/default config.
+        resolve(configJson);
+    } @catch (NSException *exception) {
+        // D7 — resolve null so JS uses its defaults; never reject hard.
+        resolve(nil);
+    }
+}
+
 RCT_EXPORT_METHOD(trackClickEvent:
                   (NSDictionary *)details
                   resolver:(RCTPromiseResolveBlock)resolve
@@ -1306,5 +1501,25 @@ RCT_EXPORT_METHOD(trackClickEvent:
         reject(@"ERROR", @"tracker with given namespace not found", error);
     }
 }
+
+#if !TARGET_OS_TV
+RCT_EXPORT_METHOD(startReplay: (RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+    @try {
+        [CATAppAnalytics startReplay];
+        resolve(@(YES));
+    } @catch (NSException *exception) {
+        reject(@"ERROR", exception.reason, nil);
+    }
+}
+
+RCT_EXPORT_METHOD(stopReplay: (RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+    @try {
+        [CATAppAnalytics stopReplay];
+        resolve(@(YES));
+    } @catch (NSException *exception) {
+        reject(@"ERROR", exception.reason, nil);
+    }
+}
+#endif
 
 @end

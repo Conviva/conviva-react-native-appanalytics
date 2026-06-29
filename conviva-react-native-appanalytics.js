@@ -1,4 +1,4 @@
-import { NativeModules } from 'react-native';
+import { NativeModules, TurboModuleRegistry, AppState } from 'react-native';
 import * as React from 'react';
 import React__default from 'react';
 import hoistNonReactStatic from 'hoist-non-react-statics';
@@ -66,7 +66,7 @@ function errorHandler(err, alwaysLog = false) {
  * @param x - The argument to check.
  * @returns - A boolean
  */
-function isObject(x) {
+function isObject$1(x) {
     return Object.prototype.toString.call(x) === '[object Object]';
 }
 
@@ -87,6 +87,90 @@ if (!isAvailable) {
     errorHandler(new Error('Unable to access the native iOS/Android Conviva tracker, a tracker implementation with very limited functionality is used.'));
 }
 const RNConvivaTracker = NativeModules.RNConvivaTracker;
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Payload size limits aligned with the Conviva JS web tracker
+ * (JS_DPI_ERROR_REPORTING_AND_CONFIG §4). Cross-platform parity ensures
+ * consistent backend schema validation and payload cap enforcement.
+ */
+/** Max error message length. Matches the Conviva JS tracker limit. */
+const MAX_MESSAGE_LENGTH = 2048;
+/**
+ * Max stack trace length. Matches the Conviva JS tracker limit.
+ * Minified RN bundles can produce longer stacks, but parity simplifies backend
+ * schema validation.
+ */
+const MAX_STACK_TRACE_LENGTH = 8192;
+const MAX_COMPONENT_STACK_LENGTH = 4096;
+/**
+ * Default rate limiter: 20 events per 1-second window, matching the Conviva JS
+ * horizontal tracker defaults (JS_DPI_ERROR_REPORTING_AND_CONFIG §2.2).
+ */
+const DEFAULT_MAX_EVENTS_PER_WINDOW = 20;
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 1000;
+/**
+ * Circuit-breaker cooldown. After maxEvents is exceeded within the window,
+ * the circuit OPENS and stays open for this duration. Matches the Conviva JS
+ * horizontal tracker `disconnectDuration` parameter.
+ */
+const DEFAULT_DISCONNECT_DURATION_MS = 2000;
+/**
+ * Schema URI for the Conviva application-error self-describing event.
+ * Used for fatal JS errors via TrackerController.track(SelfDescribing(...)).
+ * Mirrors the native ExceptionHandler pipeline (sp/ae/1-0-2).
+ */
+const APPLICATION_ERROR_SCHEMA = 'sp/ae/1-0-2';
+/**
+ * Event name for non-fatal RN errors (custom event, own metric surface).
+ * Fatal RN errors use APPLICATION_ERROR_SCHEMA via track() instead.
+ * Web / Horizontal JS errors remain `conviva_application_error` — unchanged.
+ */
+const NON_FATAL_ERROR_EVENT_NAME = 'conviva_non_fatal_error';
+/**
+ * Installed-state sentinel placed on `globalThis`. The slot's VALUE is a
+ * `TrackerInstallState` record (`{ cleanups: Array<() => void> }`) rather
+ * than a bare boolean — colocating the plugin cleanup handles with the
+ * flag is required so a JS hot-reload / Fast Refresh cycle that replaces
+ * the `ConvivaErrorTracker` singleton can still find and run the prior
+ * cleanups (the new instance starts with `pluginCleanups: []`). Without
+ * this, every reload chains a fresh Conviva handler on top of the old
+ * one, causing duplicate reporting and unbounded handler-chain growth.
+ *
+ * `_applyHookState` is the single authority that reads/writes the slot;
+ * `teardown()` clears it. Any truthy value is treated as "installed" so
+ * an older boolean shape (from a prior tracker version still resident
+ * after upgrade) is recognised but its cleanups are dropped — the new
+ * install will simply replace the previously-registered handlers.
+ */
+const INSTALL_FLAG = '__conviva_error_tracker_installed__';
+/**
+ * Attribute keys that are unconditionally dropped at every consumer
+ * attribute merge point inside the error-tracking pipeline:
+ *  - `errorTracker._dispatch` (globalAttributes + extraAttributes merge),
+ *  - `errorTracker.addAttribute` (per-key admission),
+ *  - `NativeBridgeAdapter.buildWirePayload` (wire flatten),
+ *  - `trackError` non-fatal-fallback custom-event payload.
+ *
+ * `Object.assign(target, source)` invokes `[[Set]]` on the target, so an
+ * own `"__proto__"` property on a JSON-parsed source (e.g.
+ * `JSON.parse('{"__proto__":{"polluted":true}}')`) would otherwise hit
+ * the `__proto__` setter and pollute `Object.prototype` for the entire
+ * realm. `constructor` and `prototype` are dropped for defence-in-depth
+ * even on `Object.create(null)` targets so reserved prototype-chain
+ * names cannot end up in the wire payload.
+ */
+const BLOCKED_ATTRIBUTE_KEYS = new Set([
+    '__proto__',
+    'constructor',
+    'prototype',
+]);
 
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
@@ -134,6 +218,7 @@ const logMessages = {
     revenueEventInvalidTransactionId: 'Must be a non-empty string. Event not sent.',
     revenueEventInvalidCurrency: 'Must be a non-empty string. Event not sent.',
     trackClickEvent: 'click event requires atleast one attribute',
+    trackError: 'trackError event requires message as string parameter to be set',
     // custom tags contexts
     setCustomTags: 'setCustomTags requires tags',
     clearCustomTags: 'clearCustomTags requires tag keys',
@@ -172,8 +257,44 @@ const logMessages = {
     setScreenViewport: 'setScreenViewport: screenViewport can only be of ScreenSize type or null',
     setColorDepth: 'setColorDepth: colorDepth can only be a number(integer) or null',
     setSubjectData: 'setSubjectData:',
-    createTrackerNotSet: 'createTracker not invoked prior:'
+    createTrackerNotSet: 'createTracker not invoked prior:',
+    // error tracking
+    trackErrorEvent: 'trackError:'
 };
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Returns a rejected Promise when `argmap` is not an object, or null when it
+ * is. Centralises the repeated isObject guard that opens every validate*
+ * function — kept as a shared helper so validate* functions stay one-line.
+ */
+function rejectIfNotObject(argmap) {
+    return !isObject$1(argmap)
+        ? Promise.reject(new Error(logMessages.evType))
+        : null;
+}
+/**
+ * Validates a manual error event.
+ *
+ * The only required field is `message`. All others are optional: the tracker
+ * fills in sensible defaults (isFatal=false, isHandled=true) when omitted.
+ */
+function validateErrorEvent(argmap) {
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
+    }
+    if (typeof argmap.message !== 'string' || argmap.message.length === 0) {
+        return Promise.reject(new Error(logMessages.trackError));
+    }
+    return Promise.resolve(true);
+}
 
 /*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
@@ -194,9 +315,9 @@ const logMessages = {
  * @returns - boolean
  */
 function isValidSD(sd) {
-    return isObject(sd)
+    return isObject$1(sd)
         && typeof sd.schema === 'string'
-        && isObject(sd.data);
+        && isObject$1(sd.data);
 }
 /**
  * Validates whether an object is a valid array of contexts
@@ -233,9 +354,9 @@ function validateSelfDesc(argmap) {
  * @returns - boolean promise
  */
 function validateScreenView(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr !== null) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.name !== 'string') {
@@ -250,9 +371,9 @@ function validateScreenView(argmap) {
  * @returns - boolean promise
  */
 function validateStructured(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.category !== 'string'
@@ -268,9 +389,9 @@ function validateStructured(argmap) {
  * @returns - boolean promise
  */
 function validatePageView(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.pageUrl !== 'string') {
@@ -285,9 +406,9 @@ function validatePageView(argmap) {
  * @returns - boolean promise
  */
 function validateTiming(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.category !== 'string'
@@ -304,9 +425,9 @@ function validateTiming(argmap) {
  * @returns - boolean promise
  */
 function validateConsentGranted(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.expiry !== 'string'
@@ -323,9 +444,9 @@ function validateConsentGranted(argmap) {
  * @returns - boolean promise
  */
 function validateConsentWithdrawn(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.all !== 'boolean'
@@ -342,9 +463,9 @@ function validateConsentWithdrawn(argmap) {
  * @returns - boolean promise
  */
 function validateDeepLinkReceived(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.url !== 'string') {
@@ -359,9 +480,9 @@ function validateDeepLinkReceived(argmap) {
  * @returns - boolean promise
  */
 function validateMessageNotification(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.title !== 'string'
@@ -379,7 +500,7 @@ function validateMessageNotification(argmap) {
  * @returns - boolean
  */
 function isValidEcomItem(item) {
-    if (isObject(item)
+    if (isObject$1(item)
         && typeof item.sku === 'string'
         && typeof item.price === 'number'
         && typeof item.quantity === 'number') {
@@ -406,9 +527,9 @@ function validItemsArg(items) {
  * @returns - boolean promise
  */
 function validateEcommerceTransaction(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     // validate required props
     if (typeof argmap.orderId !== 'string'
@@ -425,7 +546,7 @@ function validateEcommerceTransaction(argmap) {
  * @returns - boolean promise
  */
 function validateRevenueEvent(argmap) {
-    if (!isObject(argmap)) {
+    if (!isObject$1(argmap)) {
         return Promise.reject(new Error(logMessages.revenueEventNullEvent));
     }
     if (typeof argmap.totalOrderAmount !== 'number' || !Number.isFinite(argmap.totalOrderAmount)) {
@@ -440,16 +561,16 @@ function validateRevenueEvent(argmap) {
     return Promise.resolve(true);
 }
 function validateCustomEvent(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     return Promise.resolve(true);
 }
 function validateCustomTags(argmap) {
-    // validate type
-    if (!isObject(argmap)) {
-        return Promise.reject(new Error(logMessages.evType));
+    const typeErr = rejectIfNotObject(argmap);
+    if (typeErr) {
+        return typeErr;
     }
     return Promise.resolve(true);
 }
@@ -559,7 +680,7 @@ function isValidConfig(config, defaultKeys) {
  * @returns - boolean
  */
 function isValidNetworkConf(config) {
-    if (!isObject(config)
+    if (!isObject$1(config)
         || !isValidConfig(config, networkProps)
         || typeof config.endpoint !== 'string'
         || !config.endpoint) {
@@ -574,7 +695,7 @@ function isValidNetworkConf(config) {
  * @returns - boolean
  */
 function isValidTrackerConf(config) {
-    if (!isObject(config) || !isValidConfig(config, trackerProps)) {
+    if (!isObject$1(config) || !isValidConfig(config, trackerProps)) {
         return false;
     }
     return true;
@@ -586,7 +707,7 @@ function isValidTrackerConf(config) {
  * @returns - boolean
  */
 function isValidSessionConf(config) {
-    if (!isObject(config)
+    if (!isObject$1(config)
         || !isValidConfig(config, sessionProps)
         || !sessionProps.every(key => Object.keys(config).includes(key))) {
         return false;
@@ -600,7 +721,7 @@ function isValidSessionConf(config) {
  * @returns - boolean
  */
 function isValidEmitterConf(config) {
-    if (!isObject(config) || !isValidConfig(config, emitterProps)) {
+    if (!isObject$1(config) || !isValidConfig(config, emitterProps)) {
         return false;
     }
     return true;
@@ -623,7 +744,7 @@ function isScreenSize(arr) {
  * @returns - boolean
  */
 function isValidSubjectConf(config) {
-    if (!isObject(config) || !isValidConfig(config, subjectProps)) {
+    if (!isObject$1(config) || !isValidConfig(config, subjectProps)) {
         return false;
     }
     // validating ScreenSize here to simplify array handling in bridge
@@ -646,7 +767,7 @@ function isValidSubjectConf(config) {
  * @returns - boolean
  */
 function isValidGdprConf(config) {
-    if (!isObject(config)
+    if (!isObject$1(config)
         || !isValidConfig(config, gdprProps)
         || !gdprProps.every(key => Object.keys(config).includes(key))
         || !['consent', 'contract', 'legal_obligation', 'legitimate_interests', 'public_task', 'vital_interests'].includes(config.basisForProcessing)) {
@@ -661,7 +782,7 @@ function isValidGdprConf(config) {
  * @returns - boolean
  */
 function isValidGC(gc) {
-    return isObject(gc)
+    return isObject$1(gc)
         && isValidConfig(gc, gcProps)
         && typeof gc.tag === 'string'
         && Array.isArray(gc.globalContexts)
@@ -689,11 +810,11 @@ function isValidGCConf(config) {
  * @returns - boolean
  */
 function isValidClidSyncConf(config) {
-    if (!isObject(config) || !isValidConfig(config, clidSyncProps)) {
+    if (!isObject$1(config) || !isValidConfig(config, clidSyncProps)) {
         return false;
     }
     if (Object.prototype.hasOwnProperty.call(config, 'webViewCookie') && config.webViewCookie != null) {
-        if (!isObject(config.webViewCookie)) {
+        if (!isObject$1(config.webViewCookie)) {
             return false;
         }
         if (Object.prototype.hasOwnProperty.call(config.webViewCookie, 'domains')
@@ -712,7 +833,7 @@ function isValidClidSyncConf(config) {
  * @returns - boolean
  */
 function isValidRemoteConf(config) {
-    if (!isObject(config)
+    if (!isObject$1(config)
         || !isValidConfig(config, remoteProps)
         || typeof config.endpoint !== 'string'
         || !config.endpoint) {
@@ -770,6 +891,1619 @@ function initValidate(init) {
         return Promise.reject(new Error(logMessages.clidSync));
     }
     return Promise.resolve(true);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Copies non-blocked, defined entries from `src` into `target`. */
+function copyInto(target, src) {
+    for (const k of Object.keys(src)) {
+        if (BLOCKED_ATTRIBUTE_KEYS.has(k)) {
+            continue;
+        }
+        const v = src[k];
+        if (v !== undefined) {
+            target[k] = v;
+        }
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Owns the tracker's global attribute bag plus the propagated userId, and
+ * builds the per-dispatch merged attribute set.
+ *
+ * Prototype-pollution defence: the backing object uses a null prototype so a
+ * consumer-supplied `__proto__` key cannot reach `Object.prototype`'s setter,
+ * and BLOCKED_ATTRIBUTE_KEYS are dropped on every read/write path as
+ * defence-in-depth so they never leak into the wire payload.
+ */
+class AttributeStore {
+    globalAttributes = Object.create(null);
+    userId = null;
+    add(key, value) {
+        if (key.length === 0 || BLOCKED_ATTRIBUTE_KEYS.has(key)) {
+            return;
+        }
+        this.globalAttributes[key] = value;
+    }
+    remove(key) {
+        if (BLOCKED_ATTRIBUTE_KEYS.has(key)) {
+            return;
+        }
+        delete this.globalAttributes[key];
+    }
+    setUserId(id) {
+        this.userId = typeof id === 'string' ? id : null;
+    }
+    /**
+     * Builds the merged attribute bag from globalAttributes, `extraAttributes`,
+     * and userId. Returns undefined when the resulting bag is empty.
+     */
+    build(extraAttributes) {
+        const attrs = Object.create(null);
+        copyInto(attrs, this.globalAttributes);
+        if (extraAttributes !== undefined) {
+            copyInto(attrs, extraAttributes);
+        }
+        if (this.userId !== null) {
+            attrs.userId = this.userId;
+        }
+        return Object.keys(attrs).length > 0 ? attrs : undefined;
+    }
+    /** Resets to a null-prototype object and clears the userId. */
+    reset() {
+        this.globalAttributes = Object.create(null);
+        this.userId = null;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Fail-silent execution helpers.
+ *
+ * The error-tracking subsystem must NEVER throw out of its own reporting paths
+ * (design constraint D7). Historically every such path wrapped its body in an
+ * inline `try { ... } catch { /* fail-silent *\/ }`. Routing those through these
+ * two helpers keeps the exact same fail-silent behaviour while removing the
+ * per-call `catch` branch from each caller — concentrating it in one place.
+ */
+/**
+ * Runs `fn`, swallowing any thrown error. Drop-in replacement for an inline
+ * `try { fn(); } catch { /* fail-silent *\/ }` void block.
+ */
+function runSafely(fn) {
+    try {
+        fn();
+    }
+    catch {
+        /* fail-silent */
+    }
+}
+/**
+ * Runs `fn` and returns its result; returns `fallback` if `fn` throws.
+ * Drop-in replacement for a `try { return fn(); } catch { return fallback; }`
+ * block whose catch yields a fixed value.
+ */
+function safeCall(fn, fallback) {
+    try {
+        return fn();
+    }
+    catch {
+        return fallback;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Returns `v` when it is a positive finite number, otherwise `fallback`. */
+function positiveOr(v, fallback) {
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback;
+}
+/** Reports whether the bundle is running in a dev build. Never throws. */
+function isDevMode() {
+    return safeCall(() => typeof __DEV__ !== 'undefined' && !!__DEV__, false);
+}
+/**
+ * Attempts to locate a build-time-injected bundle hash. Consumers can set
+ * `global.__CONVIVA_BUNDLE_ID__` via a Metro transformer or Babel plugin.
+ * Runtime override via ErrorTrackingConfiguration.bundleId wins over this.
+ */
+function readBundleIdFromGlobal$1() {
+    const g = globalThis;
+    const v = g.__CONVIVA_BUNDLE_ID__;
+    return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Boolean flags whose default is `true` — set false only if the consumer
+ *  explicitly passed `false`. */
+const DEFAULT_TRUE_FLAGS = [
+    'enabled',
+    'captureGlobalErrors',
+    'captureUnhandledRejections',
+    'enableRateLimiting',
+];
+/** Boolean flags whose default is `false` — set true only if the consumer
+ *  explicitly passed `true`. */
+const DEFAULT_FALSE_FLAGS = [
+    'suppressInDev',
+    'promiseRejectionsAsHandled',
+];
+/** Numeric rate-limit fields and their fallbacks; applied via positiveOr. */
+const NUMERIC_DEFAULTS = [
+    ['maxEventsPerWindow', DEFAULT_MAX_EVENTS_PER_WINDOW],
+    ['rateLimitWindowMs', DEFAULT_RATE_LIMIT_WINDOW_MS],
+    ['disconnectDurationMs', DEFAULT_DISCONNECT_DURATION_MS],
+];
+/** Applies the four DEFAULT_TRUE_FLAGS — anything not strictly false wins. */
+function applyTrueFlags(c, out) {
+    for (const key of DEFAULT_TRUE_FLAGS) {
+        out[key] = c[key] !== false;
+    }
+}
+/** Applies the two DEFAULT_FALSE_FLAGS — only strictly true enables them. */
+function applyFalseFlags(c, out) {
+    for (const key of DEFAULT_FALSE_FLAGS) {
+        out[key] = c[key] === true;
+    }
+}
+/** Applies the three NUMERIC_DEFAULTS via positiveOr. */
+function applyNumericDefaults(c, out) {
+    for (const [key, fallback] of NUMERIC_DEFAULTS) {
+        out[key] = positiveOr(c[key], fallback);
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Applies the per-payload defaults that `_initFromTracker` lifts out of the
+ * consumer-facing ErrorTrackingConfiguration. Flag tables avoid repeating one
+ * ternary per field — see ./flagTables.
+ */
+function applyConfigDefaults(cfg) {
+    const c = cfg ?? {};
+    const out = {};
+    applyTrueFlags(c, out);
+    applyFalseFlags(c, out);
+    applyNumericDefaults(c, out);
+    out.beforeCapture = c.beforeCapture;
+    out.bundleId = c.bundleId ?? readBundleIdFromGlobal$1();
+    out.bridgeAdapter = c.bridgeAdapter;
+    return out;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * True when `err` is a non-null object or function — the kinds of values that
+ * can be tracked via WeakSet. Acts as a type guard so callers don't need an
+ * `err as object` cast on the WeakSet add/has side.
+ */
+function isObjectKey(err) {
+    return err !== null && (typeof err === 'object' || typeof err === 'function');
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Stable key for a non-object thrown value (primitives, undefined, null). */
+function primitiveKey(err) {
+    if (err === undefined) {
+        return '__undef__';
+    }
+    if (err === null) {
+        return '__null__';
+    }
+    return `${typeof err}:${String(err)}`;
+}
+/**
+ * Bounded TTL store for thrown primitives. Primitives cannot be WeakSet keys,
+ * so we key by their string serialisation and expire entries after `ttlMs`,
+ * dropping the oldest insertion when the store is full.
+ */
+class PrimitiveDedupStore {
+    ttlMs;
+    max;
+    seen = new Map();
+    constructor(ttlMs, max) {
+        this.ttlMs = ttlMs;
+        this.max = max;
+    }
+    isDuplicate(err) {
+        this.evictExpired();
+        const prev = this.seen.get(primitiveKey(err));
+        return prev !== undefined && Date.now() - prev < this.ttlMs;
+    }
+    markSeen(err) {
+        if (this.seen.size >= this.max) {
+            const oldest = this.seen.keys().next().value;
+            if (oldest !== undefined) {
+                this.seen.delete(oldest);
+            }
+        }
+        this.seen.set(primitiveKey(err), Date.now());
+    }
+    reset() {
+        this.seen.clear();
+    }
+    evictExpired() {
+        const now = Date.now();
+        for (const [k, v] of this.seen) {
+            if (now - v >= this.ttlMs) {
+                this.seen.delete(k);
+            }
+        }
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Prevents the same Error object from being reported twice when captured by
+ * multiple hooks (e.g. ErrorUtils.setGlobalHandler runs, then a parent
+ * ErrorBoundary's componentDidCatch runs for the same throw).
+ *
+ * Strategy:
+ *  - Error instances tracked via WeakSet so GC is automatic (no leak).
+ *  - Non-Error thrown primitives delegated to PrimitiveDedupStore, since
+ *    primitives cannot be WeakSet keys.
+ */
+class DedupGuard {
+    seenObjects = new WeakSet();
+    primitives;
+    constructor(primitiveTtlMs = 500, maxPrimitives = 256) {
+        this.primitives = new PrimitiveDedupStore(primitiveTtlMs, maxPrimitives);
+    }
+    /** true if this thrown value was already seen within the TTL window. */
+    isDuplicate(err) {
+        return isObjectKey(err)
+            ? this.seenObjects.has(err)
+            : this.primitives.isDuplicate(err);
+    }
+    /** Call after dispatching so subsequent captures of the same throw are suppressed. */
+    markSeen(err) {
+        if (isObjectKey(err)) {
+            this.seenObjects.add(err);
+            return;
+        }
+        this.primitives.markSeen(err);
+    }
+    /** Test hook — clears all seen state. Not part of the public API. */
+    _reset() {
+        this.primitives.reset();
+        // WeakSet has no .clear() method; reassigning is the only way to reset it.
+        this.seenObjects = new WeakSet();
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Reads the current install state from the global slot. Returns the modern
+ * `{ cleanups }` shape, the sentinel `'legacy'` when a truthy-but-unknown value
+ * is present, or `null` when nothing is installed.
+ */
+function readInstallState() {
+    const g = globalThis;
+    const v = g[INSTALL_FLAG];
+    if (v === undefined || v === null || v === false) {
+        return null;
+    }
+    if (typeof v === 'object' && Array.isArray(v.cleanups)) {
+        return v;
+    }
+    // Truthy but not the modern shape (e.g. legacy `true`). Treat as installed
+    // for "previous install detected" purposes, but no recoverable cleanups.
+    return 'legacy';
+}
+/** Writes (or, when passed null, clears) the install state on the global slot. */
+function writeInstallState(state) {
+    const g = globalThis;
+    if (state === null) {
+        delete g[INSTALL_FLAG];
+    }
+    else {
+        g[INSTALL_FLAG] = state;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Detects the active JavaScript engine. Hermes exposes the marker global
+ * `HermesInternal`; JSC / browser do not.
+ */
+function detectJsEngine() {
+    const g = globalThis;
+    if (g.HermesInternal != null) {
+        return 'hermes';
+    }
+    // If a browser-style `window` is present but no Hermes, treat as JSC/browser.
+    if (typeof g.navigator !== 'undefined') {
+        return 'jsc';
+    }
+    return 'unknown';
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Stack-frame patterns probed in order; the first match wins. Driven as a
+ * table so `matchFrame` loops over them instead of cascading near-identical
+ * `if (m === null)` blocks.
+ *   Pattern 1 (V8/Hermes):           "at ... (FILE:LINE:COL)"
+ *   Pattern 2 (V8 no-parens / anon): "at FILE:LINE:COL"
+ *   Pattern 3 (JSC/Safari):          "funcName@FILE:LINE:COL"
+ */
+const FRAME_PATTERNS = [
+    /\(([^()]+):(\d+):(\d+)\)\s*$/,
+    /at\s+([^\s]+):(\d+):(\d+)\s*$/,
+    /@([^@\s]+):(\d+):(\d+)\s*$/,
+];
+/** Returns the first regex match against `line`, or null if none match. */
+function matchFrame(line) {
+    for (const re of FRAME_PATTERNS) {
+        const m = line.match(re);
+        if (m !== null) {
+            return m;
+        }
+    }
+    return null;
+}
+/**
+ * True when `line` is the top "ErrorType: message" summary line that should be
+ * skipped before searching for stack frames. Only relevant at index 0 — interior
+ * lines are always treated as candidate frames.
+ */
+function isSummaryLine(i, line) {
+    return i === 0 && !/^\s*at\s/.test(line) && !/@/.test(line);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Reads the first frame of an Error.stack string and extracts file/line/col.
+ * Handles the common V8/Hermes/JSC shapes:
+ *   "at funcName (file:///path/to/index.bundle:123:45)"
+ *   "funcName@file:///path/to/index.bundle:123:45"
+ *   "at file:///path/to/index.bundle:123:45"
+ */
+function parseFirstFrame(stack) {
+    if (stack == null) {
+        return {};
+    }
+    const lines = stack.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line == null) {
+            continue;
+        }
+        if (isSummaryLine(i, line)) {
+            continue;
+        }
+        const m = matchFrame(line.trim());
+        if (m !== null) {
+            return {
+                fileName: m[1],
+                lineNumber: parseInt(m[2], 10),
+                lineColumn: parseInt(m[3], 10),
+            };
+        }
+    }
+    return {};
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Truncates `s` to at most `max` characters. */
+function truncate(s, max) {
+    if (s.length <= max) {
+        return s;
+    }
+    return s.slice(0, max);
+}
+/** Renders a non-Error primitive into a string suitable for `message`. */
+function primitiveMessage(error) {
+    if (error === undefined) {
+        return 'undefined';
+    }
+    if (error === null) {
+        return 'null';
+    }
+    return String(error);
+}
+/**
+ * Extracts message, errorType, and stackTrace from a thrown value. Handles both
+ * Error instances and arbitrary primitives.
+ */
+function normalizeError(error, errorSource) {
+    if (error instanceof Error) {
+        return {
+            message: error.message || String(error),
+            errorType: error.name || 'Error',
+            stackTrace: typeof error.stack === 'string' ? error.stack : '',
+        };
+    }
+    return {
+        message: primitiveMessage(error),
+        errorType: errorSource === 'unhandledRejection' ? 'UnhandledRejection' : 'Error',
+        stackTrace: '',
+    };
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Default severity per error source. `unhandledRejection` is resolved
+ * separately because it depends on the `promiseRejectionsAsHandled` flag, and
+ * `isFatal` short-circuits to 'fatal' before this lookup. Unmapped sources fall
+ * back to 'info'.
+ */
+const SEVERITY_BY_SOURCE = {
+    errorBoundary: 'error',
+    globalHandler: 'error',
+    manual: 'info',
+};
+/** Default severity mapping — can be overridden per-call by the tracker. */
+function computeSeverity(source, isFatal, promiseRejectionsAsHandled) {
+    if (isFatal) {
+        return 'fatal';
+    }
+    if (source === 'unhandledRejection') {
+        return promiseRejectionsAsHandled ? 'warning' : 'error';
+    }
+    return SEVERITY_BY_SOURCE[source] ?? 'info';
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Assembles the final JsErrorPayload from pre-computed parts. */
+function buildPayload(parts) {
+    const { args, norm, severity, attributes, bundleId } = parts;
+    const { fileName, lineNumber, lineColumn } = parseFirstFrame(norm.stackTrace);
+    return {
+        timestamp: Date.now(),
+        message: truncate(norm.message, MAX_MESSAGE_LENGTH),
+        errorType: truncate(norm.errorType, MAX_MESSAGE_LENGTH),
+        stackTrace: truncate(norm.stackTrace, MAX_STACK_TRACE_LENGTH),
+        isFatal: !!args.isFatal,
+        isHandled: !!args.isHandled,
+        errorSource: args.errorSource,
+        severity,
+        componentStack: args.componentStack !== undefined
+            ? truncate(args.componentStack, MAX_COMPONENT_STACK_LENGTH)
+            : undefined,
+        lineNumber,
+        lineColumn,
+        fileName,
+        bundleId,
+        jsEngine: detectJsEngine(),
+        attributes,
+    };
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Dispatches `err` to the tracker on the global-handler path, after marking
+ *  it seen in the dedup guard so chained handlers (e.g. ErrorBoundary
+ *  re-throw) can't double-report the same throw. */
+function dispatchGlobalError(tracker, err, isFatal) {
+    const dedup = tracker._getDedupGuard();
+    if (dedup.isDuplicate(err)) {
+        return;
+    }
+    dedup.markSeen(err);
+    tracker._dispatch({
+        error: err,
+        errorSource: 'globalHandler',
+        isFatal: isFatal ?? false,
+        isHandled: false,
+    });
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+const NOOP_CLEANUP = () => { };
+/**
+ * Reads `globalThis.ErrorUtils` defensively. Returns null when the global is
+ * absent or lacks the required `setGlobalHandler` accessor — the only entry
+ * point this plugin needs. Caller treats null as "ErrorUtils unavailable".
+ */
+function resolveErrorUtils() {
+    const g = globalThis;
+    const errorUtils = g.ErrorUtils;
+    return errorUtils != null && typeof errorUtils.setGlobalHandler === 'function'
+        ? errorUtils
+        : null;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Installs a chained handler on RN's ErrorUtils so uncaught JS errors are
+ * forwarded to the error tracker. Always calls the previously-registered
+ * handler afterwards so coexistence with Sentry / Bugsnag / Crashlytics /
+ * RN's red-box keeps working.
+ *
+ * Returns a cleanup function that restores the previous handler, or a no-op
+ * if ErrorUtils was unavailable.
+ */
+function installGlobalErrorHandler(tracker) {
+    return safeCall(() => {
+        const errorUtils = resolveErrorUtils();
+        if (errorUtils === null) {
+            return NOOP_CLEANUP;
+        }
+        const previous = typeof errorUtils.getGlobalHandler === 'function'
+            ? errorUtils.getGlobalHandler()
+            : undefined;
+        const handler = (err, isFatal) => {
+            runSafely(() => dispatchGlobalError(tracker, err, isFatal));
+            // Chain to the previous handler so the red-box, Sentry, Crashlytics,
+            // Bugsnag, etc. keep working unchanged.
+            if (typeof previous === 'function') {
+                runSafely(() => previous(err, isFatal));
+            }
+        };
+        errorUtils.setGlobalHandler(handler);
+        return () => runSafely(() => errorUtils.setGlobalHandler(previous ?? NOOP_CLEANUP));
+    }, NOOP_CLEANUP);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Shared no-op teardown / callback placeholder — avoids duplicate closures. */
+const NOOP$1 = () => { };
+/** Shared fail-silent teardown returned when an install attempt fails. */
+const FAIL_SILENT = () => { };
+/**
+ * Runs `fn` and returns its teardown. Returns FAIL_SILENT when `fn` throws,
+ * eliminating the repetitive `try { return fn(); } catch { return () => {} }`
+ * pattern inside each install* function.
+ */
+function safeInstall(fn) {
+    return safeCall(fn, FAIL_SILENT);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function stringify(v) {
+    if (v === undefined) {
+        return 'undefined';
+    }
+    if (v === null) {
+        return 'null';
+    }
+    return safeCall(() => (typeof v === 'string' ? v : JSON.stringify(v)), String(v));
+}
+/**
+ * Wraps a non-Error rejection reason into an Error whose name reads
+ * "UnhandledRejection", so downstream consumers can distinguish wrapped
+ * primitives from genuine throw-errors. Error instances pass through unchanged.
+ */
+function toRejectionError(reason) {
+    if (reason instanceof Error) {
+        return reason;
+    }
+    const err = new Error(stringify(reason));
+    err.name = 'UnhandledRejection';
+    return err;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Normalises a rejection reason into an Error and forwards it to the tracker as
+ * an `unhandledRejection`. Deduplicated via the tracker's dedup guard.
+ */
+function dispatchRejection(tracker, reason) {
+    const dedup = tracker._getDedupGuard();
+    if (dedup.isDuplicate(reason)) {
+        return;
+    }
+    dedup.markSeen(reason);
+    const asHandled = tracker._getConfig().promiseRejectionsAsHandled === true;
+    tracker._dispatch({
+        error: toRejectionError(reason),
+        errorSource: 'unhandledRejection',
+        isFatal: false,
+        isHandled: asHandled,
+    });
+}
+/** Builds the `{ allRejections, onUnhandled, onHandled }` object shared by the
+ *  Hermes and JSC-polyfill `enablePromiseRejectionTracker` / `enable` APIs. */
+function makeRejectionTrackerOptions(tracker) {
+    return {
+        allRejections: true,
+        onUnhandled: (_id, error) => runSafely(() => dispatchRejection(tracker, error)),
+        onHandled: NOOP$1,
+    };
+}
+/** No-op rejection-tracker options used during teardown to replace any
+ *  previously-installed Conviva callbacks with closures that drop rejections. */
+const NOOP_REJECTION_TRACKER_OPTIONS = {
+    allRejections: true,
+    onUnhandled: NOOP$1,
+    onHandled: NOOP$1,
+};
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function installHermes(tracker, g) {
+    const hermesG = g;
+    return safeInstall(() => {
+        hermesG.HermesInternal.enablePromiseRejectionTracker(makeRejectionTrackerOptions(tracker));
+        // HermesInternal has no un-enable API, so teardown re-installs the tracker
+        // with no-op callbacks — replacing the previous closure so subsequent
+        // rejections are silently dropped, matching removeEventListener semantics
+        // on browser engines.
+        return () => runSafely(() => {
+            hermesG.HermesInternal.enablePromiseRejectionTracker(NOOP_REJECTION_TRACKER_OPTIONS);
+        });
+    });
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Reads `evt.reason` defensively — `evt` may be the reason itself in non-spec engines. */
+function unwrapRejectionEvent(evt) {
+    return evt !== null && typeof evt === 'object'
+        ? evt.reason
+        : evt;
+}
+function installBrowser(tracker, g) {
+    const browserG = g;
+    const listener = (evt) => runSafely(() => {
+        dispatchRejection(tracker, unwrapRejectionEvent(evt));
+    });
+    return safeInstall(() => {
+        browserG.addEventListener('unhandledrejection', listener);
+        return () => runSafely(() => browserG.removeEventListener('unhandledrejection', listener));
+    });
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Resolves the `rejection-tracking` polyfill if it is available (it ships with
+ * RN's `InitializeCore` on non-Hermes engines). Returns null on require failure
+ * or when the resolved module does not expose the expected `enable` accessor.
+ */
+function resolvePromisePolyfill() {
+    let mod;
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        mod = require('promise/setimmediate/rejection-tracking');
+    }
+    catch {
+        return null;
+    }
+    if (mod == null || typeof mod.enable !== 'function') {
+        return null;
+    }
+    return mod;
+}
+function installJscPolyfill(tracker) {
+    const polyfill = resolvePromisePolyfill();
+    if (polyfill === null) {
+        return FAIL_SILENT;
+    }
+    return safeInstall(() => {
+        polyfill.enable(makeRejectionTrackerOptions(tracker));
+        return () => runSafely(() => {
+            if (typeof polyfill.disable === 'function') {
+                polyfill.disable();
+            }
+        });
+    });
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+// -----------------------------------------------------------------------------
+// Entry point
+// -----------------------------------------------------------------------------
+/**
+ * Unhandled promise-rejection capture.
+ *
+ * Each JS engine exposes a different API, so we branch (engine implementations
+ * live in `promiseEngines.ts`):
+ *   Hermes (default RN JS engine 0.70+) — HermesInternal.enablePromiseRejectionTracker
+ *     with an options object: { allRejections: true, onUnhandled: cb, onHandled: cb }.
+ *     Hermes ships its own Promise implementation, so the `promise` polyfill
+ *     is NOT installed and `global.addEventListener('unhandledrejection')`
+ *     does NOT fire on RN/Hermes.
+ *     KNOWN LIMITATION (G3 fix): this API is last-one-wins — if another SDK
+ *     (Sentry, Bugsnag) calls enablePromiseRejectionTracker AFTER us, our
+ *     `onUnhandled` is replaced. Consumers who need coexistence with such
+ *     SDKs should disable Conviva's handler via captureUnhandledRejections:
+ *     false and call tracker.trackError manually from their SDK's hook.
+ *     Teardown re-enables the tracker with no-op callbacks to release the
+ *     previous closure, since Hermes exposes no un-install API.
+ *
+ *   JSC / RN pre-0.70 — the `promise/setimmediate/rejection-tracking` polyfill
+ *     shipped with React Native's metro preset. Import via CommonJS require
+ *     so this file still compiles when the polyfill is absent.
+ *
+ *   Browser / RN Web — `window.addEventListener('unhandledrejection', ...)`.
+ */
+function installPromiseRejectionHandler(tracker) {
+    return safeInstall(() => {
+        const g = globalThis;
+        const hi = g.HermesInternal;
+        if (hi != null && typeof hi.enablePromiseRejectionTracker === 'function') {
+            return installHermes(tracker, g);
+        }
+        if (typeof g.addEventListener === 'function' && typeof g.removeEventListener === 'function') {
+            return installBrowser(tracker, g);
+        }
+        return installJscPolyfill(tracker);
+    });
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Per-session sliding-window + circuit-breaker rate limiter.
+ *
+ * Two-phase design (mirrors the Conviva JS horizontal tracker):
+ *  - CLOSED : up to `maxEvents` events allowed in any rolling `windowMs` window.
+ *  - OPEN   : once the window limit is exceeded, the circuit opens for
+ *             `disconnectMs` and all subsequent events are dropped — even if
+ *             the sliding window would otherwise allow them. This prevents
+ *             a storm of duplicates from resuming immediately after the
+ *             window slides.
+ */
+class RateLimiter {
+    ringBuffer;
+    windowStart = 0;
+    maxEvents;
+    windowMs;
+    disconnectMs;
+    circuitOpenUntil = 0;
+    constructor(maxEvents, windowMs, disconnectMs) {
+        this.maxEvents = this.sanitizeMaxEvents(maxEvents);
+        this.windowMs = this.sanitizePositive(windowMs, DEFAULT_RATE_LIMIT_WINDOW_MS);
+        this.disconnectMs = this.sanitizePositive(disconnectMs, DEFAULT_DISCONNECT_DURATION_MS);
+        this.ringBuffer = new Array(this.maxEvents).fill(0);
+    }
+    /**
+     * Returns true when an event is allowed to proceed. Consumes a slot on
+     * allow. Caller must NOT consume a slot if the event is filtered out by a
+     * beforeCapture hook.
+     */
+    tryAcquire(now = Date.now()) {
+        if (now < this.circuitOpenUntil) {
+            return false;
+        }
+        const oldestIdx = this.windowStart % this.maxEvents;
+        const oldestTs = this.ringBuffer[oldestIdx];
+        if (oldestTs !== 0 && now - oldestTs < this.windowMs) {
+            // Filling the buffer within `windowMs` → open the circuit.
+            this.circuitOpenUntil = now + this.disconnectMs;
+            return false;
+        }
+        this.ringBuffer[oldestIdx] = now;
+        this.windowStart += 1;
+        return true;
+    }
+    /**
+     * Live update from remote config. Preserves in-flight state sensibly:
+     *  - Resets the window start only when maxEvents changes (buffer is resized).
+     *  - Does NOT close an already-open circuit early: new disconnectMs applies
+     *    from the next time the circuit opens.
+     */
+    updateConfig(maxEvents, windowMs, disconnectMs) {
+        const newMax = this.sanitizeMaxEvents(maxEvents);
+        if (newMax !== this.maxEvents) {
+            this.maxEvents = newMax;
+            this.ringBuffer = new Array(this.maxEvents).fill(0);
+            this.windowStart = 0;
+        }
+        this.windowMs = this.sanitizePositive(windowMs, this.windowMs);
+        this.disconnectMs = this.sanitizePositive(disconnectMs, this.disconnectMs);
+    }
+    /** true when the circuit is currently OPEN (i.e. all events dropped). */
+    isOpen(now = Date.now()) {
+        return now < this.circuitOpenUntil;
+    }
+    /** Test hook — clears all state. Not part of the public API. */
+    _reset() {
+        this.ringBuffer = new Array(this.maxEvents).fill(0);
+        this.windowStart = 0;
+        this.circuitOpenUntil = 0;
+    }
+    sanitizeMaxEvents(v) {
+        if (!Number.isFinite(v) || v < 1) {
+            return 1;
+        }
+        return Math.floor(v);
+    }
+    sanitizePositive(v, fallback) {
+        if (!Number.isFinite(v) || v <= 0) {
+            return fallback;
+        }
+        return v;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Boolean config keys whose remote-config change must trigger a hook
+ * reinstall. Driven as a table so `_updateFromRemoteConfig` applies them in
+ * one loop instead of three near-identical `if` blocks.
+ */
+const HOOK_BOOLEAN_KEYS = [
+    'enabled',
+    'captureGlobalErrors',
+    'captureUnhandledRejections',
+];
+/** Positive-number rate-limit config keys applied from a remote-config patch. */
+const RATE_LIMIT_KEYS = [
+    'maxEventsPerWindow',
+    'rateLimitWindowMs',
+    'disconnectDurationMs',
+];
+/**
+ * Per-source capture-flag mapping. Driven as a table so `_dispatch` honours
+ * runtime toggles with a single lookup instead of two near-identical guard
+ * branches per source. A source whose flag is absent is always permitted.
+ */
+const SOURCE_CAPTURE_FLAG = {
+    globalHandler: 'captureGlobalErrors',
+    unhandledRejection: 'captureUnhandledRejections',
+};
+/**
+ * Singleton error tracker. Owns all capture plugins, rate limiting,
+ * deduplication, user-id propagation, and bridge dispatch.
+ *
+ * Lifetime:
+ *  - Constructed as an ES module singleton (`export const errorTracker = ...`)
+ *    so it can be imported by plugins and the ErrorBoundary without having a
+ *    reference threaded through props.
+ *  - `_initFromTracker()` is called by the SDK init code path. Subsequent
+ *    re-calls apply the new config and reinstall hooks via `_applyHookState`,
+ *    so capture-flag changes (captureGlobalErrors, captureUnhandledRejections)
+ *    and enable/disable transitions take effect immediately.
+ *  - `setEnabled()` and `_updateFromRemoteConfig()` route through the same
+ *    `_applyHookState` helper so runtime toggles match init semantics.
+ *  - `teardown()` uninstalls hooks and is called on SDK cleanup/removeAll.
+ */
+class ConvivaErrorTracker {
+    config = applyConfigDefaults({});
+    bridge = null;
+    rateLimiter;
+    dedup = new DedupGuard();
+    pluginCleanups = [];
+    installed = false;
+    // Owns the global attribute bag + userId and builds the per-dispatch merged
+    // attribute set, with prototype-pollution defence (see AttributeStore).
+    attributes = new AttributeStore();
+    // Listeners notified whenever `config.enabled` may have changed (init,
+    // setEnabled, remote-config update, teardown). Used by ConvivaErrorBoundary
+    // to re-render and pass through (stop intercepting) when disabled.
+    enabledListeners = new Set();
+    constructor() {
+        this.rateLimiter = new RateLimiter(this.config.maxEventsPerWindow, this.config.rateLimitWindowMs, this.config.disconnectDurationMs);
+    }
+    /**
+     * Called from src/api.ts on createTracker(). Wires the consumer config and
+     * installs all capture hooks. Safe to call multiple times — config always
+     * reflects the latest call, and capture-hook flags (captureGlobalErrors,
+     * captureUnhandledRejections, enabled) are applied on every call by
+     * tearing down the existing hooks and reinstalling them with the updated
+     * flags via `_applyHookState`.
+     */
+    _initFromTracker(cfg) {
+        // D7: initialisation MUST NOT throw. A failure here silently disables
+        // error tracking but leaves the rest of the SDK functional.
+        runSafely(() => {
+            this.config = applyConfigDefaults(cfg);
+            this.rateLimiter.updateConfig(this.config.maxEventsPerWindow, this.config.rateLimitWindowMs, this.config.disconnectDurationMs);
+            this.bridge = this.config.bridgeAdapter ?? null;
+            this._applyHookState();
+        });
+    }
+    /**
+     * Aligns plugin install state with the current `config.enabled` /
+     * captureGlobalErrors / captureUnhandledRejections flags. Always tears
+     * down existing hooks first so flag changes take effect immediately:
+     *  - enabled:false → uninstall all plugins, clear INSTALL_FLAG.
+     *  - enabled:true  → uninstall + reinstall per current capture flags.
+     *
+     * HMR / hot-reload safety: cleanup handles are read from
+     * `globalThis[INSTALL_FLAG]` rather than only from `this.pluginCleanups`,
+     * so a new tracker instance constructed by a re-evaluated module (Fast
+     * Refresh, dev-server reload) still tears down the previous instance's
+     * handlers instead of chaining a new one on top of the old one.
+     *
+     * Plugin installation is deferred until initialisation via
+     * `installPlugins()`, but the plugin modules themselves are imported when
+     * this tracker module is loaded.
+     */
+    _applyHookState() {
+        if (readInstallState() !== null || this.installed) {
+            this._drainPluginCleanups();
+        }
+        if (!this.config.enabled) {
+            this._notifyEnabledChange();
+            return;
+        }
+        this.installPlugins();
+        // Share the same array reference so subsequent `installPlugins` mutations
+        // (none today, but a future `installPlugins` could push a third cleanup)
+        // remain reachable through the global slot.
+        writeInstallState({ cleanups: this.pluginCleanups });
+        this.installed = true;
+        this._notifyEnabledChange();
+    }
+    /**
+     * Runs every plugin cleanup (preferring the global-slot copy over
+     * `this.pluginCleanups` so an HMR-swapped instance can still tear down the
+     * previous incarnation's handlers), then clears local state and the global
+     * install slot. Used by both `_applyHookState` (before reinstall) and
+     * `teardown` (final shutdown).
+     */
+    _drainPluginCleanups() {
+        const prior = readInstallState();
+        const cleanups = prior !== null && prior !== 'legacy'
+            ? prior.cleanups
+            : this.pluginCleanups;
+        for (const fn of cleanups) {
+            runSafely(fn);
+        }
+        this.pluginCleanups = [];
+        writeInstallState(null);
+        this.installed = false;
+    }
+    /**
+     * Current master enable state. Read by ConvivaErrorBoundary to decide whether
+     * to intercept (enabled) or pass the error through (disabled).
+     */
+    isEnabled() {
+        return this.config.enabled;
+    }
+    /**
+     * Subscribe to master enable-state changes. The listener is invoked with the
+     * current `enabled` value whenever it may have changed. Returns an
+     * unsubscribe function. Never throws.
+     */
+    onEnabledChange(listener) {
+        runSafely(() => this.enabledListeners.add(listener));
+        return () => runSafely(() => this.enabledListeners.delete(listener));
+    }
+    /** Notifies enable-state listeners with the current value. Fail-silent. */
+    _notifyEnabledChange() {
+        const enabled = this.config.enabled;
+        for (const listener of this.enabledListeners) {
+            // a listener must not break others
+            runSafely(() => listener(enabled));
+        }
+    }
+    /**
+     * Uninstalls every capture hook and clears internal state. Idempotent.
+     * Called from src/api.ts on removeAllTrackers() / cleanup().
+     *
+     * Drains cleanups from BOTH `this.pluginCleanups` and the global install
+     * slot so an HMR-swapped instance can still tear down handlers that were
+     * registered by a previous incarnation of this module.
+     */
+    teardown() {
+        runSafely(() => {
+            this._drainPluginCleanups();
+            this.dedup._reset();
+            this.rateLimiter._reset();
+            this.config.enabled = false;
+            this.bridge = null;
+            // Resets to a null-prototype bag + clears userId (see AttributeStore).
+            this.attributes.reset();
+            this._notifyEnabledChange();
+        });
+    }
+    /**
+     * Public toggle used by consumer API + remote config. Routes through
+     * `_applyHookState` so transitions in either direction are observable:
+     * enabled:false uninstalls plugins and clears INSTALL_FLAG, while
+     * enabled:true installs them per current capture flags.
+     */
+    setEnabled(enabled) {
+        // fail-silent — toggling must not throw.
+        runSafely(() => {
+            const next = !!enabled;
+            if (next === this.config.enabled) {
+                return;
+            }
+            this.config.enabled = next;
+            this._applyHookState();
+        });
+    }
+    setRateLimitingEnabled(enabled) {
+        this.config.enableRateLimiting = !!enabled;
+    }
+    addAttribute(key, value) {
+        this.attributes.add(key, value);
+    }
+    removeAttribute(key) {
+        this.attributes.remove(key);
+    }
+    /** Called from src/subject.ts when setUserId runs. Kept internal. */
+    _setUserId(id) {
+        this.attributes.setUserId(id);
+    }
+    /**
+     * Remote-config update point. Not yet wired to a backend, but in place for
+     * future milestones. All fields optional; only provided ones override.
+     *
+     * If any of `enabled`, `captureGlobalErrors`, or `captureUnhandledRejections`
+     * actually change, `_applyHookState` is invoked so plugin install state
+     * matches the new config. This keeps remote-driven enable/disable and
+     * capture toggles observable at the hook layer (not just at dispatch).
+     */
+    _updateFromRemoteConfig(patch) {
+        runSafely(() => {
+            if (patch == null || typeof patch !== 'object') {
+                return;
+            }
+            const hookStateDirty = this._applyHookBooleanPatch(patch);
+            if (typeof patch.enableRateLimiting === 'boolean') {
+                this.config.enableRateLimiting = patch.enableRateLimiting;
+            }
+            this._applyRateLimitPatch(patch);
+            if (hookStateDirty) {
+                this._applyHookState();
+            }
+        });
+    }
+    /**
+     * Applies the three hook-affecting boolean flags from a remote-config patch
+     * via the `HOOK_BOOLEAN_KEYS` table. Returns true when any flag actually
+     * changed so the caller can decide whether to reinstall plugin hooks.
+     */
+    _applyHookBooleanPatch(patch) {
+        let dirty = false;
+        for (const key of HOOK_BOOLEAN_KEYS) {
+            const next = patch[key];
+            if (typeof next === 'boolean' && next !== this.config[key]) {
+                this.config[key] = next;
+                dirty = true;
+            }
+        }
+        return dirty;
+    }
+    /**
+     * Applies the rate-limit subset of a remote-config patch to the internal
+     * config and updates the RateLimiter when any value changed.
+     */
+    _applyRateLimitPatch(patch) {
+        let dirty = false;
+        for (const key of RATE_LIMIT_KEYS) {
+            const v = patch[key];
+            if (typeof v === 'number' && v > 0) {
+                this.config[key] = v;
+                dirty = true;
+            }
+        }
+        if (dirty) {
+            this.rateLimiter.updateConfig(this.config.maxEventsPerWindow, this.config.rateLimitWindowMs, this.config.disconnectDurationMs);
+        }
+    }
+    /**
+     * Internal entry point called from each plugin. Responsibilities:
+     *  1. Honour dev-suppression and `enabled`.
+     *  2. Honour per-source capture flags so runtime toggles work even when a
+     *     plugin's teardown is best-effort (e.g. Hermes).
+     *  3. Build + truncate the payload via private helpers.
+     *  4. Run beforeCapture hook (fail-open).
+     *  5. Bridge availability check.
+     *  6. Rate-limit (after hook & bridge check — filtered / undeliverable
+     *     events don't consume tokens).
+     *  7. Forward to bridge adapter.
+     *
+     * NEVER throws. The pre-payload gates and the post-payload pipeline are
+     * extracted into `_acquireBridge` and `_passesDispatchPipeline` so this
+     * method's cyclomatic complexity stays low.
+     */
+    _dispatch(args) {
+        // D7 — reporting path MUST NOT throw. Swallow and move on.
+        runSafely(() => {
+            const bridge = this._acquireBridge(args.errorSource);
+            if (bridge === null) {
+                return;
+            }
+            const norm = normalizeError(args.error, args.errorSource);
+            const severity = args.severityOverride
+                ?? computeSeverity(args.errorSource, args.isFatal, this.config.promiseRejectionsAsHandled);
+            const attributes = this.attributes.build(args.extraAttributes);
+            const payload = buildPayload({
+                args, norm, severity, attributes, bundleId: this.config.bundleId,
+            });
+            if (!this._passesDispatchPipeline(payload, bridge)) {
+                return;
+            }
+            this._forwardToBridge(payload);
+        });
+    }
+    /**
+     * Consolidates the pre-payload gates (enabled / dev-suppression / per-source
+     * capture flag / bridge presence) into a single check. Returns the captured
+     * bridge reference when dispatch should proceed, or `null` to short-circuit.
+     *
+     * Capturing the bridge here means the dispatch path is stable against
+     * re-entrant mutation (e.g. a beforeCapture hook calling `_setBridge`) and
+     * TypeScript can narrow `bridge` to `BridgeAdapter` for the rest of `_dispatch`.
+     */
+    _acquireBridge(source) {
+        if (!this.config.enabled) {
+            return null;
+        }
+        if (this.config.suppressInDev && isDevMode()) {
+            return null;
+        }
+        const captureKey = SOURCE_CAPTURE_FLAG[source];
+        if (captureKey !== undefined && this.config[captureKey] === false) {
+            return null;
+        }
+        return this.bridge;
+    }
+    /**
+     * Final post-payload gating: runs the beforeCapture hook (fail-open per D8),
+     * confirms the bridge is still available, and consumes a rate-limit slot.
+     * Returns `true` when the payload should be forwarded, `false` when dropped.
+     *
+     * Filtered / undeliverable events never consume a rate-limit token —
+     * `tryAcquire` is the LAST gate before forwarding.
+     */
+    _passesDispatchPipeline(payload, bridge) {
+        if (this.config.beforeCapture !== undefined) {
+            const keep = safeCall(() => this.config.beforeCapture(payload), true);
+            if (keep === false) {
+                return false;
+            }
+        }
+        if (!bridge.isAvailable()) {
+            return false;
+        }
+        if (this.config.enableRateLimiting && !this.rateLimiter.tryAcquire()) {
+            return false;
+        }
+        return true;
+    }
+    /**
+     * Final hop to the native bridge. No session/subject enrichment happens
+     * here: session linkage is owned by the native Conviva/Snowplow tracker,
+     * which attaches a `client_session` context entity to every event emitted
+     * from `trackCustomEvent` / `track(SelfDescribing(...))` when
+     * `sessionContext: true` (the default). Adding a JS-side session fetch
+     * would either duplicate that entity or produce a stale value across
+     * native session rollovers, so the JS pipeline deliberately stays out
+     * of it. Kept as a separate method purely as a test seam.
+     */
+    _forwardToBridge(payload) {
+        const bridge = this.bridge;
+        if (bridge === null || !bridge.isAvailable()) {
+            return;
+        }
+        runSafely(() => bridge.reportJsError(payload));
+    }
+    /** @internal — test/introspection accessor. */
+    _getConfig() {
+        return this.config;
+    }
+    /** @internal — test/introspection accessor. */
+    _getBridge() {
+        return this.bridge;
+    }
+    /** @internal — test/introspection accessor. */
+    _getDedupGuard() {
+        return this.dedup;
+    }
+    /** @internal — test/introspection accessor. */
+    _getRateLimiter() {
+        return this.rateLimiter;
+    }
+    /** @internal — Bridge replacement (tests only). */
+    _setBridge(bridge) {
+        this.bridge = bridge;
+    }
+    /** @internal — hook install seam. See installPlugins. */
+    get installedState() {
+        return this.installed;
+    }
+    /**
+     * Installs global-error-handler + promise-rejection plugins. Lazy-required
+     * so unit tests do not pull in RN / ErrorUtils side effects at module load.
+     *
+     * The ErrorBoundary component is NOT installed here — it is a React
+     * component the consumer wraps around their tree.
+     */
+    installPlugins() {
+        // Plugin install failure MUST NOT break the SDK. Fail-silent.
+        runSafely(() => {
+            if (this.config.captureGlobalErrors) {
+                const cleanup = installGlobalErrorHandler(this);
+                if (typeof cleanup === 'function') {
+                    this.pluginCleanups.push(cleanup);
+                }
+            }
+            if (this.config.captureUnhandledRejections) {
+                const cleanup = installPromiseRejectionHandler(this);
+                if (typeof cleanup === 'function') {
+                    this.pluginCleanups.push(cleanup);
+                }
+            }
+        });
+    }
+    /** @internal — resolves once any pending install completes (test helper). */
+    _waitForInstall() {
+        return Promise.resolve();
+    }
+}
+/** Module-level singleton shared by api.ts, subject.ts, and plugins. */
+const errorTracker = new ConvivaErrorTracker();
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Fabricates an Error instance from the consumer-provided `argmap` so the
+ * tracker's stack / parseFirstFrame logic runs uniformly against automatic
+ * captures (which receive real Errors from RN's ErrorUtils / Promise hooks).
+ */
+function buildErrorInstance(argmap) {
+    const e = new Error(argmap.message);
+    if (argmap.errorType !== undefined) {
+        e.name = argmap.errorType;
+    }
+    if (argmap.stackTrace !== undefined) {
+        e.stack = argmap.stackTrace;
+    }
+    return e;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Dispatches the manual error through the error-tracking pipeline (dedup +
+ * rate-limit + beforeCapture hook + bridge adapter). Fail-silent (D7) so a
+ * malformed argmap can never reject the caller's track* promise.
+ */
+function dispatchManualError(argmap) {
+    try {
+        errorTracker._dispatch({
+            error: buildErrorInstance(argmap),
+            errorSource: 'manual',
+            isFatal: argmap.isFatal === true,
+            isHandled: argmap.isHandled !== false,
+            componentStack: argmap.componentStack,
+            extraAttributes: argmap.attributes,
+        });
+    }
+    catch {
+        // D7 — fail silent
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Builds the sp/ae/1-0-2 SelfDescribing data payload from `argmap`. */
+function buildApplicationErrorData(argmap) {
+    return {
+        message: argmap.message,
+        stackTrace: argmap.stackTrace ?? '',
+        exceptionName: argmap.errorType ?? 'Error',
+        programmingLanguage: 'JAVASCRIPT',
+        isFatal: true,
+        threadName: 'js',
+    };
+}
+/** Copies consumer attributes onto `eventData`, dropping blocked keys and any
+ *  collisions with reserved fields already written by buildNonFatalEventData. */
+function mergeAttributes(eventData, attributes) {
+    for (const k of Object.keys(attributes)) {
+        if (!BLOCKED_ATTRIBUTE_KEYS.has(k) && !(k in eventData)) {
+            eventData[k] = attributes[k];
+        }
+    }
+}
+/** Builds the non-fatal-error custom-event payload. */
+function buildNonFatalEventData(argmap) {
+    // Null-prototype target preserves prototype-pollution safety while keeping
+    // `Object.assign` typed as `Record<string, unknown>` (not `any`).
+    const eventData = Object.assign(Object.create(null), {
+        message: argmap.message,
+        errorType: argmap.errorType ?? 'Error',
+        stackTrace: argmap.stackTrace ?? '',
+        timestamp: Date.now(),
+        isFatal: false,
+        isHandled: argmap.isHandled !== false,
+    });
+    if (argmap.componentStack !== undefined) {
+        eventData.componentStack = argmap.componentStack;
+    }
+    if (argmap.attributes !== undefined) {
+        mergeAttributes(eventData, argmap.attributes);
+    }
+    return eventData;
+}
+/** Forwards `argmap` as the fatal sp/ae/1-0-2 SelfDescribing event. */
+function emitFatal(namespace, argmap, contexts) {
+    return RNConvivaTracker.trackSelfDescribingEvent({
+        tracker: namespace,
+        eventData: { schema: APPLICATION_ERROR_SCHEMA, data: buildApplicationErrorData(argmap) },
+        contexts,
+    });
+}
+/** Forwards `argmap` as the non-fatal custom event. */
+function emitNonFatal(namespace, argmap, contexts) {
+    return RNConvivaTracker.trackCustomEvent({
+        tracker: namespace,
+        eventName: NON_FATAL_ERROR_EVENT_NAME,
+        eventData: buildNonFatalEventData(argmap),
+        contexts,
+    });
+}
+/**
+ * Legacy fallback emit used when the bridge cannot deliver the canonical
+ * `reportJsError` payload. Routing depends on `isFatal`:
+ *  - true  → sp/ae/1-0-2 SelfDescribing event with CRASH classification
+ *  - false → `conviva_non_fatal_error` custom event
+ */
+function emitLegacyFallback(namespace, argmap, contexts) {
+    return (argmap.isFatal ?? false)
+        ? emitFatal(namespace, argmap, contexts)
+        : emitNonFatal(namespace, argmap, contexts);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function isBridgeReady() {
+    const cfg = errorTracker._getConfig();
+    const bridge = errorTracker._getBridge();
+    return cfg.enabled === true && bridge !== null && bridge.isAvailable();
+}
+function isDevSuppressed() {
+    const cfg = errorTracker._getConfig();
+    const isDev = typeof __DEV__ !== 'undefined' && !!__DEV__;
+    return cfg.suppressInDev === true && isDev;
+}
+/**
+ * Single-emit guarantee: when the error-tracking pipeline already produced the
+ * authoritative native event (bridge enabled + reachable) — or `suppressInDev`
+ * dropped the dispatch — the legacy track*Event fallback must NOT re-emit.
+ *
+ * Returns true to skip the legacy fallback, false to fall through to it.
+ * Never throws; on internal error it returns false (legacy fallback runs).
+ */
+function shouldSkipLegacyFallback() {
+    try {
+        return isBridgeReady() || isDevSuppressed();
+    }
+    catch {
+        return false;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function reThrowTrackErrorEvent(error) {
+    throw new Error(`${logMessages.trackErrorEvent} ${error.message}`);
+}
+/**
+ * Manual error-reporting entry point.
+ *
+ * Routing strategy (single-emit guarantee):
+ *   1. Always dispatch through the error-tracking pipeline (dedup +
+ *      rate-limit + beforeCapture hook + bridge adapter). Fail-silent (D7).
+ *   2. If the bridge adapter is enabled AND can deliver to native, step 1 has
+ *      already produced the canonical native event. We therefore RETURN EARLY
+ *      so the same error is not re-emitted via the legacy fallback.
+ *   3. If error tracking is disabled OR the bridge cannot deliver, we fall
+ *      back to the legacy track*Event path so consumer events still reach the
+ *      native SDK. See `legacyFallback.ts` for the fatal vs non-fatal routing.
+ */
+function trackError$2(namespace, argmap, contexts = []) {
+    return validateErrorEvent(argmap)
+        .then(() => validateContexts(contexts))
+        .then(() => {
+        dispatchManualError(argmap);
+        if (shouldSkipLegacyFallback()) {
+            return Promise.resolve();
+        }
+        return emitLegacyFallback(namespace, argmap, contexts);
+    })
+        .catch(reThrowTrackErrorEvent);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function reThrowSetJsBundleInfoError(error) {
+    throw new Error(`setJsBundleInfo: ${error.message}`);
+}
+/**
+ * Passes JS bundle identity fields to the native SDK.
+ *
+ * @param namespace - the tracker namespace
+ * @param info - map of JS bundle fields
+ */
+function setJsBundleInfo$1(namespace, info) {
+    return RNConvivaTracker.setJsBundleInfo({
+        tracker: namespace,
+        info,
+    }).catch(reThrowSetJsBundleInfoError);
 }
 
 /*
@@ -1145,10 +2879,26 @@ function setUserId$1(namespace, newUid) {
     if (!(newUid === null || typeof newUid === 'string')) {
         return Promise.reject(new Error(logMessages.setUserId));
     }
+    // Wait for the native call to resolve before forwarding to the error
+    // tracker. If the native promise rejects, the SDK promise rejects and
+    // the error tracker's userId is left untouched — keeping JS error
+    // payloads aligned with the native subject state. Fail-silent (D7):
+    // a propagation failure here must not surface to consumers.
     return Promise.resolve(RNConvivaTracker.setUserId({
         tracker: namespace,
         userId: newUid
-    }));
+    })).then(() => {
+        try {
+            errorTracker._setUserId(newUid);
+        }
+        catch {
+            /* D7 */
+        }
+        // Explicit return so promise/always-return is satisfied without
+        // changing the resolved value (still Promise<void> from the consumer
+        // perspective).
+        return undefined;
+    });
 }
 /**
  * Sets the networkUserId of the tracker subject
@@ -1346,10 +3096,1016 @@ function setSubjectData$1(namespace, config) {
 }
 
 /*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+// Module-level state for the public api.ts surface. Centralised here so the
+// per-category wrapper files can share the init flag and remote-config cleanup
+// handle without growing api.ts's cyclomatic complexity.
+let isTrackerInitialised = false;
+let stopRemoteConfigSync = null;
+function getIsInitialised() {
+    return isTrackerInitialised;
+}
+function setIsInitialised(value) {
+    isTrackerInitialised = value;
+}
+function setRemoteConfigCleanup(fn) {
+    stopRemoteConfigSync = fn;
+}
+/** Stops any active remote-config sync. Idempotent, fail-silent. */
+function teardownRemoteConfigSync() {
+    try {
+        const fn = stopRemoteConfigSync;
+        if (fn !== null) {
+            fn();
+            stopRemoteConfigSync = null;
+        }
+    }
+    catch {
+        // D7 — teardown must not throw.
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function isObject(v) {
+    return typeof v === 'object' && v !== null;
+}
+function positiveNumber(v) {
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Maps each native `collectionRateLimit.exceptionAutotracking` field to its
+ * `RemoteConfigPatch` counterpart. Driven as a table so the three fields are
+ * applied in one loop instead of three near-identical assignments.
+ */
+const RATE_LIMIT_FIELD_MAP = [
+    ['maxEvents', 'maxEventsPerWindow'],
+    ['timeWindow', 'rateLimitWindowMs'],
+    ['disconnectDuration', 'disconnectDurationMs'],
+];
+/**
+ * Reads `collectionRateLimit.exceptionAutotracking` from a bundle and writes
+ * each positive-number rate-limit field onto `patch`. Absent / non-positive
+ * values are silently skipped, leaving the JS-side defaults in place.
+ */
+function applyCollectionRateLimit(bundle, patch) {
+    const collectionRateLimit = bundle.collectionRateLimit;
+    if (!isObject(collectionRateLimit)) {
+        return;
+    }
+    const rl = collectionRateLimit.exceptionAutotracking;
+    if (!isObject(rl)) {
+        return;
+    }
+    for (const [srcKey, patchKey] of RATE_LIMIT_FIELD_MAP) {
+        const value = positiveNumber(rl[srcKey]);
+        if (value !== undefined) {
+            patch[patchKey] = value;
+        }
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Reads `trackerConfiguration.exceptionAutotracking` from a bundle and writes
+ * the `enabled` field onto `patch` when the trackerConfiguration node exists.
+ * Present-and-boolean wins; a bundle that omits the key is treated as enabled
+ * (true), matching the native TrackerConfiguration default and the JS-web
+ * DEFAULT_REMOTE_CONFIG.exceptionAutotracking default.
+ */
+function applyTrackerConfiguration(bundle, patch) {
+    const trackerConfiguration = bundle.trackerConfiguration;
+    if (!isObject(trackerConfiguration)) {
+        return;
+    }
+    const ea = trackerConfiguration.exceptionAutotracking;
+    patch.enabled = typeof ea === 'boolean' ? ea : true;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Default tracker namespace used by the RN tracker (see src/tracker.ts). */
+const DEFAULT_NAMESPACE = 'CAT';
+/**
+ * Selects the configuration bundle for the RN tracker. Prefers an exact
+ * `namespace === "CAT"` match (mirrors how the native SDK keys bundles) and
+ * falls back to the first bundle, matching the JS-web tracker's
+ * `configurationBundle[0]` behaviour.
+ */
+function selectBundle(bundles) {
+    if (!Array.isArray(bundles) || bundles.length === 0) {
+        return undefined;
+    }
+    for (const b of bundles) {
+        if (isObject(b) && b.namespace === DEFAULT_NAMESPACE) {
+            return b;
+        }
+    }
+    const first = bundles[0];
+    return isObject(first) ? first : undefined;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Parses the verbatim native remote-config JSON string into a `RemoteConfigPatch`.
+ * Reads the same fields as the Conviva JS horizontal tracker:
+ *  - `configurationBundle[].trackerConfiguration.exceptionAutotracking`
+ *    → `enabled` (defaults to `true` when the key is absent but a bundle
+ *    exists, matching the native/JS-web default).
+ *  - `configurationBundle[].collectionRateLimit.exceptionAutotracking`
+ *    `{ maxEvents, timeWindow, disconnectDuration }` →
+ *    `{ maxEventsPerWindow, rateLimitWindowMs, disconnectDurationMs }`
+ *    (each omitted from the patch when absent, so JS defaults stand).
+ *
+ * Fully defensive (D7): a null / empty / malformed input, a missing bundle, or
+ * any unexpected shape yields an empty patch (no config change). Never throws.
+ */
+function parseRemoteConfig(json) {
+    const patch = {};
+    try {
+        if (typeof json !== 'string' || json.length === 0) {
+            return patch;
+        }
+        const root = JSON.parse(json);
+        if (!isObject(root)) {
+            return patch;
+        }
+        const bundle = selectBundle(root.configurationBundle);
+        if (bundle === undefined) {
+            return patch;
+        }
+        applyTrackerConfiguration(bundle, patch);
+        applyCollectionRateLimit(bundle, patch);
+    }
+    catch {
+        // D7 — schema drift / malformed JSON must never throw. Return whatever was
+        // resolved before the failure (typically the empty patch).
+    }
+    return patch;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Probes TurboModuleRegistry (New Architecture / RN 0.76+) first, then falls
+ * back to NativeModules (Legacy Architecture) for a module that satisfies the
+ * supplied `validate` predicate. Returns null when neither registry yields a
+ * passing module — typical in Node / Jest / web environments. Never throws:
+ * a registry access that itself throws is caught and treated as absence.
+ *
+ * `validate` lets callers assert that a specific accessor is present on the
+ * resolved module (e.g. `reportJsError`, `getRemoteConfig`) so a stub that
+ * happens to be registered under the same name does not pass.
+ *
+ * Replaces two near-identical inline implementations that previously lived in
+ * NativeBridgeAdapter (resolveNativeModule) and RemoteConfigSync
+ * (resolveRemoteConfigSource).
+ */
+function resolveTurboOrLegacy(moduleName, validate) {
+    const tm = safeCall(() => {
+        const mod = TurboModuleRegistry.get(moduleName);
+        return mod !== null && validate(mod) ? mod : null;
+    }, null);
+    if (tm !== null) {
+        return tm;
+    }
+    return safeCall(() => {
+        const mods = NativeModules;
+        const legacy = mods[moduleName];
+        return legacy !== undefined && validate(legacy) ? legacy : null;
+    }, null);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Probes TurboModuleRegistry first, then falls back to NativeModules, for an
+ * RNConvivaTracker module that exposes a callable `getRemoteConfig`. Returns
+ * a thunk that invokes the resolved accessor, or null when neither registry
+ * yields a passing module (test / Node / web environments).
+ */
+function resolveRemoteConfigSource() {
+    const mod = resolveTurboOrLegacy('RNConvivaTracker', (m) => typeof m.getRemoteConfig === 'function');
+    return mod !== null ? () => mod.getRemoteConfig() : null;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Fetches the verbatim remote-config JSON from native, parses it, and forwards
+ * the resulting patch to the supplied `onPatch` callback. Fully fail-silent
+ * (D7): a missing native accessor, a rejected promise, or a malformed payload
+ * leaves the current config untouched. The callback is only invoked when the
+ * patch is non-empty.
+ */
+async function fetchAndApplyRemoteConfig(source, onPatch) {
+    try {
+        const getter = source ?? resolveRemoteConfigSource();
+        if (getter === null) {
+            return;
+        }
+        const json = await getter();
+        const patch = parseRemoteConfig(json);
+        if (Object.keys(patch).length > 0) {
+            onPatch?.(patch);
+        }
+    }
+    catch {
+        // D7 — remote-config sync must never throw.
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+const NOOP = () => { };
+/**
+ * Subscribes to AppState `change` events and re-pulls remote-config on every
+ * transition INTO the foreground. Returns a cleanup function that removes the
+ * subscription. Returns NOOP when AppState.addEventListener is unavailable.
+ */
+function subscribeForegroundRefresh(source, onPatch) {
+    if (typeof AppState.addEventListener !== 'function') {
+        return NOOP;
+    }
+    let lastState = typeof AppState.currentState === 'string'
+        ? AppState.currentState
+        : 'unknown';
+    const onChange = (nextState) => {
+        // Only re-pull on a real transition INTO the foreground, not on every
+        // change (e.g. active -> inactive -> active produces one re-pull).
+        if (nextState === 'active' && lastState !== 'active') {
+            fetchAndApplyRemoteConfig(source, onPatch).catch(() => { });
+        }
+        lastState = nextState;
+    };
+    // RN >= 0.65 returns a subscription with `.remove()`. Older RN (peerDep is
+    // `x.x`) returned void and required `AppState.removeEventListener`. Support
+    // both shapes so the listener is genuinely cleaned up on every RN version.
+    const subscription = AppState.addEventListener('change', onChange);
+    return () => runSafely(() => {
+        if (subscription && typeof subscription.remove === 'function') {
+            subscription.remove();
+            return;
+        }
+        const legacyRemove = AppState.removeEventListener;
+        if (typeof legacyRemove === 'function') {
+            legacyRemove.call(AppState, 'change', onChange);
+        }
+    });
+}
+/**
+ * Starts remote-config synchronisation:
+ *  1. Performs an immediate fetch+apply (init reconcile).
+ *  2. Re-fetches on every transition to the `active` AppState, capturing
+ *     mid-session remote-config flips.
+ *
+ * Returns a cleanup function that removes the AppState subscription. Safe to
+ * call in environments without AppState (returns a no-op cleanup). Never throws.
+ */
+function startRemoteConfigSync(source, onPatch) {
+    // Fire the initial reconcile as early as possible; do not await so tracker
+    // setup is never delayed.
+    fetchAndApplyRemoteConfig(source, onPatch).catch(() => { });
+    return safeCall(() => subscribeForegroundRefresh(source, onPatch), NOOP);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * List of reserved keys — anything NOT in this set inside `payload.attributes`
+ * is flattened to a top-level key on the wire payload. Keep this in sync with
+ * the reserved-key list on the Android/iOS side.
+ */
+const RESERVED_KEYS = new Set([
+    'timestamp',
+    'message',
+    'errorType',
+    'stackTrace',
+    'isFatal',
+    'isHandled',
+    'errorSource',
+    'severity',
+    'componentStack',
+    'lineNumber',
+    'lineColumn',
+    'fileName',
+    'bundleId',
+    'jsEngine',
+]);
+/**
+ * Reserved payload fields that are ALWAYS forwarded across the wire (never
+ * undefined on a well-formed JsErrorPayload).
+ */
+const REQUIRED_PAYLOAD_KEYS = [
+    'timestamp',
+    'message',
+    'errorType',
+    'stackTrace',
+    'isFatal',
+    'isHandled',
+    'errorSource',
+    'severity',
+    'jsEngine',
+];
+/**
+ * Reserved payload fields that are optional — copied to the wire object ONLY
+ * when defined, so the wire stays small.
+ */
+const OPTIONAL_PAYLOAD_KEYS = [
+    'componentStack',
+    'lineNumber',
+    'lineColumn',
+    'fileName',
+    'bundleId',
+];
+function isReservedOrBlocked(k) {
+    return RESERVED_KEYS.has(k) || BLOCKED_ATTRIBUTE_KEYS.has(k);
+}
+/** Unconditionally copies each key from `src` into `out`. */
+function copyFields(out, src, keys) {
+    for (const key of keys) {
+        out[key] = src[key];
+    }
+}
+/** Copies each key only when the source value is not `undefined`. */
+function copyDefinedFields(out, src, keys) {
+    for (const key of keys) {
+        const v = src[key];
+        if (v !== undefined) {
+            out[key] = v;
+        }
+    }
+}
+/**
+ * Flattens consumer-supplied attributes onto the wire object, dropping any key
+ * that collides with a reserved field or matches a prototype-pollution name.
+ */
+function copyConsumerAttributes(out, attributes) {
+    for (const [k, v] of Object.entries(attributes)) {
+        if (isReservedOrBlocked(k)) {
+            continue;
+        }
+        out[k] = v;
+    }
+}
+/**
+ * Merge reserved fields + attributes into a single flat object. Any
+ * attribute key colliding with a reserved key is dropped to avoid the
+ * consumer overwriting tracker-owned fields. Prototype-pollution keys
+ * (`__proto__`, `constructor`, `prototype`) are dropped unconditionally.
+ *
+ * The wire object is built with a null prototype (`Object.create(null)`)
+ * so that even if an attribute key sneaks past the filter set, direct
+ * assignment cannot mutate `Object.prototype` or the wire object's
+ * prototype chain.
+ */
+function buildWirePayload(p) {
+    const out = Object.create(null);
+    copyFields(out, p, REQUIRED_PAYLOAD_KEYS);
+    copyDefinedFields(out, p, OPTIONAL_PAYLOAD_KEYS);
+    if (p.attributes !== undefined) {
+        copyConsumerAttributes(out, p.attributes);
+    }
+    return out;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+class NativeBridgeAdapter {
+    module;
+    constructor() {
+        this.module = resolveTurboOrLegacy('RNConvivaTracker', (mod) => typeof mod.reportJsError === 'function');
+    }
+    isAvailable() {
+        return this.module !== null && typeof this.module.reportJsError === 'function';
+    }
+    reportJsError(payload) {
+        const mod = this.module;
+        if (mod === null) {
+            return;
+        }
+        // D7 — the reporting path must never throw.
+        runSafely(() => {
+            const wire = buildWirePayload(payload);
+            mod.reportJsError(JSON.stringify(wire));
+        });
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Resolves the bridge adapter for error tracking: uses the consumer-supplied
+ * adapter when present, otherwise falls back to the production NativeBridgeAdapter.
+ * Tests override this by passing `errorTracking.bridgeAdapter` in `initConfig`.
+ */
+function buildErrorTrackingAdapter(cfg) {
+    return cfg.bridgeAdapter ?? new NativeBridgeAdapter();
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Wires the error-tracking singleton after tracker creation. `errorTracking:
+ * false` fully opts out; omitting it or passing an object opts in with
+ * defaults. After opt-in, an immediate fetch+apply reconciles the
+ * consumer-configured enable/rate-limit state against the native
+ * remote-config JSON, and an AppState 'active' listener re-pulls on each
+ * foreground to capture mid-session flips.
+ */
+function wireErrorTracking(initConfig) {
+    const etConfig = initConfig.errorTracking;
+    try {
+        if (etConfig === false) {
+            teardownRemoteConfigSync();
+            errorTracker.teardown();
+            return;
+        }
+        const cfg = etConfig ?? {};
+        errorTracker._initFromTracker({
+            ...cfg,
+            bridgeAdapter: buildErrorTrackingAdapter(cfg),
+        });
+        teardownRemoteConfigSync();
+        setRemoteConfigCleanup(startRemoteConfigSync(undefined, (patch) => errorTracker._updateFromRemoteConfig(patch)));
+    }
+    catch {
+        // D7 — initialisation failure must not break tracker setup.
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Narrow `unknown` to a non-empty string. */
+function nonEmptyString(v) {
+    return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+/**
+ * Reads the build-time-injected bundle id from the global slot. Consumers can
+ * set `global.__CONVIVA_BUNDLE_ID__` via a Metro transformer or Babel plugin.
+ */
+function readBundleIdFromGlobal() {
+    return safeCall(() => {
+        const g = globalThis;
+        return nonEmptyString(g.__CONVIVA_BUNDLE_ID__);
+    }, undefined);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Reads a constant via the TurboModule getConstants() accessor, when present. */
+function readFromGetConstants(mod, key) {
+    const getConstants = mod.getConstants;
+    if (typeof getConstants !== 'function') {
+        return undefined;
+    }
+    const constants = getConstants.call(mod);
+    return constants != null ? nonEmptyString(constants[key]) : undefined;
+}
+/**
+ * Reads a constant off a native module, supporting BOTH the Legacy
+ * architecture (direct property access) AND the New Architecture / TurboModules
+ * (constants exposed only behind `getConstants()`).
+ */
+function readNativeConstant(mod, key) {
+    if (mod == null) {
+        return undefined;
+    }
+    return safeCall(() => {
+        const direct = nonEmptyString(mod[key]);
+        return direct !== undefined ? direct : readFromGetConstants(mod, key);
+    }, undefined);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Resolves the Expo Updates native module WITHOUT a build-time dependency on
+ * `expo-updates`.
+ *
+ * We deliberately do NOT `require('expo-updates')` (nor import
+ * `expo-modules-core`): a static require/import of an OPTIONAL package is
+ * resolved by Metro at BUILD time, so it would break the bundle for every
+ * consumer app that doesn't have it installed.
+ *
+ * Instead we read the runtime registries the package populates ONLY when it is
+ * actually installed (both are plain `undefined` otherwise, so discovery falls
+ * through to the embedded record):
+ *
+ *   1. `globalThis.expo.modules.ExpoUpdates` — the JSI host object used by
+ *      modern `expo-updates`.
+ *   2. `NativeModules.ExpoUpdates` — legacy RN-bridge fallback.
+ *
+ * Never throws.
+ */
+function getExpoUpdatesModule() {
+    const fromExpoModules = safeCall(() => {
+        const g = globalThis;
+        return g.expo?.modules?.ExpoUpdates ?? undefined;
+    }, undefined);
+    if (fromExpoModules != null) {
+        return fromExpoModules;
+    }
+    return safeCall(() => NativeModules.ExpoUpdates ?? undefined, undefined);
+}
+/**
+ * Expo Updates / EAS Update. Reads the JSI/global registry first (modern
+ * expo-updates), then the legacy bridge — see getExpoUpdatesModule.
+ */
+function resolveExpoId() {
+    const expo = getExpoUpdatesModule();
+    const expoUpdateId = readNativeConstant(expo, 'updateId');
+    if (expoUpdateId === undefined) {
+        return undefined;
+    }
+    const out = {
+        jsBundleId: expoUpdateId,
+        jsBundleSource: 'expo',
+    };
+    const channel = readNativeConstant(expo, 'channel') ?? readNativeConstant(expo, 'releaseChannel');
+    if (channel !== undefined) {
+        out.jsBundleChannel = channel;
+    }
+    return out;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Consumer override — treated as a build-time / global id. */
+function resolveOverrideId(overrideBundleId) {
+    const override = nonEmptyString(overrideBundleId);
+    return override !== undefined
+        ? { jsBundleId: override, jsBundleSource: 'global' }
+        : undefined;
+}
+/** Build-time injected global. */
+function resolveGlobalId() {
+    const globalId = readBundleIdFromGlobal();
+    return globalId !== undefined
+        ? { jsBundleId: globalId, jsBundleSource: 'global' }
+        : undefined;
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * CodePush `UpdateState.RUNNING` — the bundle currently executing. This is a
+ * stable enum value in the CodePush native module; hard-coded so we never need
+ * to import the JS package.
+ */
+const CODE_PUSH_UPDATE_STATE_RUNNING = 0;
+/**
+ * Optional CodePush fields that map onto the BundleInfoRecord. Each entry pairs
+ * the source field on the LocalPackage with the destination field on the
+ * BundleInfoRecord, so the discoverAsync body iterates instead of repeating an
+ * `if (nonEmptyString(pkg.X) !== undefined) { record.Y = ... }` pair per field.
+ */
+const CODE_PUSH_OPTIONAL_FIELDS = [
+    ['label', 'jsBundleLabel'],
+    ['deploymentKey', 'jsBundleChannel'],
+];
+/** Awaits the CodePush LocalPackage for the currently-running update, or null
+ *  when the module / accessor is unavailable. Caller wraps this in a try/catch. */
+async function fetchCodePushRunningPackage() {
+    const codePush = NativeModules.CodePush;
+    const getUpdateMetadata = codePush?.getUpdateMetadata;
+    if (typeof getUpdateMetadata !== 'function') {
+        return null;
+    }
+    return (await getUpdateMetadata.call(codePush, CODE_PUSH_UPDATE_STATE_RUNNING));
+}
+/**
+ * Asynchronous bundle-identity discovery for CodePush (and compatible forks).
+ *
+ * Reads CodePush via `NativeModules.CodePush` so a static
+ * `require('react-native-code-push')` (which Metro would resolve at build time)
+ * is avoided — the optional package is simply absent on consumers that don't
+ * have it installed.
+ *
+ * Resolves to a record ONLY when a non-empty `packageHash` is found; otherwise
+ * resolves to `null`. Never rejects.
+ */
+async function discoverAsync() {
+    try {
+        const pkg = await fetchCodePushRunningPackage();
+        const packageHash = nonEmptyString(pkg?.packageHash);
+        if (packageHash === undefined) {
+            return null;
+        }
+        const record = {
+            jsBundleSource: 'codepush',
+            jsEngine: detectJsEngine(),
+            jsBundleId: packageHash,
+        };
+        for (const [srcKey, destKey] of CODE_PUSH_OPTIONAL_FIELDS) {
+            const value = nonEmptyString(pkg[srcKey]);
+            if (value !== undefined) {
+                record[destKey] = value;
+            }
+        }
+        return record;
+    }
+    catch {
+        return null;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Synchronous bundle-identity discovery. Always returns at least
+ * `{ jsBundleSource, jsEngine }`.
+ *
+ * Priority for `jsBundleId`:
+ *   1. Consumer override (`overrideBundleId`) → source 'global'
+ *   2. Expo Updates `updateId`                → source 'expo'
+ *   3. Build-time global `__CONVIVA_BUNDLE_ID__` → source 'global'
+ *   4. None → source 'embedded' (no jsBundleId)
+ *
+ * Never throws — on any failure it returns the embedded base record.
+ */
+function discoverSync(overrideBundleId) {
+    const record = {
+        jsBundleSource: 'embedded',
+        jsEngine: detectJsEngine(),
+    };
+    // First source to resolve a non-empty id wins; otherwise the embedded base
+    // record is returned. safeCall keeps the whole resolution fail-silent.
+    const resolved = safeCall(() => {
+        const sources = [
+            () => resolveOverrideId(overrideBundleId),
+            resolveExpoId,
+            resolveGlobalId,
+        ];
+        for (const source of sources) {
+            const hit = source();
+            if (hit !== undefined) {
+                return hit;
+            }
+        }
+        return undefined;
+    }, undefined);
+    if (resolved !== undefined) {
+        Object.assign(record, resolved);
+    }
+    return record;
+}
+/**
+ * True when `discoverSync` resolved a real bundle id (i.e. anything other than
+ * the `embedded` fallback). Used by the init wiring to decide whether the async
+ * CodePush probe is allowed to write — a higher-priority sync source must not
+ * be clobbered by a later CodePush resolution.
+ */
+function hasResolvedBundleId(record) {
+    return record.jsBundleSource !== 'embedded';
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Shared no-op used as a .catch handler so per-call arrow closures don't
+ *  inflate this file's cyclomatic complexity (D7 — swallow rejections). */
+const swallow = () => { };
+/**
+ * Phase 2 of `wireJsBundleInfo`: awaits the async CodePush probe and forwards
+ * the result. Fully fail-silent (D7).
+ */
+async function forwardCodePushBundleInfo() {
+    try {
+        const asyncInfo = await discoverAsync();
+        if (asyncInfo !== null) {
+            await setJsBundleInfo$1('CAT', asyncInfo);
+        }
+    }
+    catch {
+        // D7 — async bundle-info forwarding must never throw.
+    }
+}
+/**
+ * Discovers the JS bundle identity (source / id / channel / label / engine) and
+ * forwards it to the native SDK via `setJsBundleInfo` so it is attached to the
+ * Conviva app-context entity on every subsequent event (D16 / §7A.5).
+ *
+ * Two-phase, fully fail-silent (D7):
+ *  - Phase 1 (synchronous): consumer override → Expo Updates → build-time global
+ *    → embedded. Forwarded immediately.
+ *  - Phase 2 (async, fire-and-forget): CodePush native module `getUpdateMetadata(0)`.
+ *    when Phase 1 did NOT already resolve a higher-priority id, so a later
+ *    CodePush resolution cannot clobber a consumer/Expo/global value.
+ */
+function wireJsBundleInfo(initConfig) {
+    try {
+        const etConfig = initConfig.errorTracking;
+        const overrideId = typeof etConfig === 'object' ? etConfig.bundleId : undefined;
+        // Phase 1 — synchronous.
+        const syncInfo = discoverSync(overrideId);
+        setJsBundleInfo$1('CAT', syncInfo).catch(swallow);
+        // Phase 2 — only if Phase 1 didn't already resolve a higher-priority id.
+        if (!hasResolvedBundleId(syncInfo)) {
+            forwardCodePushBundleInfo().catch(swallow);
+        }
+    }
+    catch {
+        // D7 — bundle-info discovery must never break tracker setup.
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Create a tracker from specified initial configuration.
+ *
+ * @param initConfig - The initial tracker configuration
+ * @returns A promise fulfilled if the tracker is initialized
+ */
+function createTracker$1(initConfig) {
+    return initValidate(initConfig)
+        .then(() => RNConvivaTracker.createTracker(initConfig))
+        .then(() => { setIsInitialised(true); })
+        .then(() => wireErrorTracking(initConfig))
+        .then(() => wireJsBundleInfo(initConfig))
+        .catch((error) => {
+        setIsInitialised(false);
+        throw new Error(`${logMessages.createTracker} ${error.message}.`);
+    });
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+function ensureErrorTrackerTeardown() {
+    try {
+        errorTracker.teardown();
+    }
+    catch { /* fail-silent */ }
+}
+/**
+ * Removes the tracker with given namespace.
+ *
+ * @param trackerNamespace - The tracker namespace
+ * @returns A boolean promise
+ */
+function removeTracker$1(trackerNamespace) {
+    if (typeof trackerNamespace !== 'string') {
+        return Promise.reject(new Error(logMessages.removeTracker));
+    }
+    if (!getIsInitialised()) {
+        return Promise.reject(new Error(logMessages.createTrackerNotSet));
+    }
+    setIsInitialised(false);
+    return Promise.resolve(RNConvivaTracker.removeTracker({ tracker: trackerNamespace }));
+}
+/**
+ * Removes all existing trackers.
+ *
+ * @returns A void promise
+ */
+function removeAllTrackers$1() {
+    if (!getIsInitialised()) {
+        return Promise.reject(new Error(logMessages.createTrackerNotSet));
+    }
+    teardownRemoteConfigSync();
+    ensureErrorTrackerTeardown();
+    return Promise.resolve(RNConvivaTracker.removeAllTrackers());
+}
+/**
+ * Cleanup.
+ *
+ * @returns A void promise
+ */
+function cleanup$1() {
+    teardownRemoteConfigSync();
+    ensureErrorTrackerTeardown();
+    return Promise.resolve(RNConvivaTracker.cleanup());
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** True when `part` is a non-empty numeric string. */
+function isNumericPart(part) {
+    return part !== '' && !isNaN(Number(part));
+}
+/** True when `clid` is the dot-separated four-numeric-parts format. */
+function isValidClientId(clid) {
+    if (!clid) {
+        return false;
+    }
+    const parts = clid.split('.');
+    if (parts.length !== 4) {
+        return false;
+    }
+    return parts.every(isNumericPart);
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/** Throws an Error tagged with logMessages.getClientId — extracted so the
+ *  `.catch` arrow on getClientId stays a single bare expression. */
+function reThrowGetClientIdError(error) {
+    throw new Error(`${logMessages.getClientId} ${error.message}.`);
+}
+/**
+ * Get the client id which is in prescribed format.
+ *
+ * @returns A promise string if the client id is available or generated
+ */
+function getClientId$1() {
+    return Promise.resolve(RNConvivaTracker.getClientId())
+        .catch(reThrowGetClientIdError);
+}
+/**
+ * Set the client id which is in the prescribed format.
+ *
+ * @param clid - client id generated for the application in the device
+ * @returns A promise fulfilled if the client id is valid
+ */
+function setClientId$1(clid) {
+    if (!isValidClientId(clid)) {
+        return Promise.reject(new Error(logMessages.setClientId));
+    }
+    return Promise.resolve(RNConvivaTracker.setClientId({ clientId: clid }));
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Higher-order wrapper that rejects every call with `createTrackerNotSet`
+ * until `getIsInitialised()` returns true. Collapses the duplicate
+ * `if (!isTrackerInitialised) return Promise.reject(...)` block that opened
+ * every wrapper in the original api.ts.
+ */
+function requireInit(fn) {
+    return (...args) => {
+        if (!getIsInitialised()) {
+            return Promise.reject(new Error(logMessages.createTrackerNotSet));
+        }
+        return fn(...args);
+    };
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Returns a function to pass JS bundle identity fields to the native SDK.
+ *
+ * @param namespace - The tracker namespace
+ * @returns A function that accepts a bundle-info map and returns a Promise
+ */
+function setJsBundleInfo(namespace) {
+    return requireInit((info) => setJsBundleInfo$1(namespace, info));
+}
+/**
+ * Returns a function to track a manual error event. Mirrors the curry shape
+ * of every other track* API for consistency with the createTracker() wiring.
+ */
+function trackError$1(namespace) {
+    return requireInit((argmap, contexts = []) => trackError$2(namespace, argmap, contexts));
+}
+
+/*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
  *
  * This program is licensed to you under the Apache License Version 2.0,
  * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
  * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
  *
  * Unless required by applicable law or agreed to in writing,
@@ -1357,82 +4113,38 @@ function setSubjectData$1(namespace, config) {
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Apache License Version 2.0 for the specific language governing permissions and limitations there under.
  */
-let isTrackerInitialised = false;
 /**
- * Create a tracker from specified initial configuration.
- *
- * @param initConfig {Object} - The initial tracker configuration
- * @returns - A promise fullfilled if the tracker is initialized
- */
-function createTracker$1(initConfig) {
-    return initValidate(initConfig)
-        .then(() => {
-        isTrackerInitialised = true;
-        return RNConvivaTracker.createTracker(initConfig);
-    })
-        .catch((error) => {
-        isTrackerInitialised = false;
-        throw new Error(`${logMessages.createTracker} ${error.message}.`);
-    });
-}
-/**
- * Removes the tracker with given namespace
- *
- * @param trackerNamespace {string} - The tracker namespace
- * @returns - A boolean promise
- */
-function removeTracker$1(trackerNamespace) {
-    if (typeof trackerNamespace !== 'string') {
-        return Promise.reject(new Error(logMessages.removeTracker));
-    }
-    if (!isTrackerInitialised) {
-        return Promise.reject(new Error(logMessages.createTrackerNotSet));
-    }
-    isTrackerInitialised = false;
-    return Promise.resolve(RNConvivaTracker.removeTracker({ tracker: trackerNamespace }));
-}
-/**
- * Removes all existing trackers
+ * Start session replay on the current screen.
+ * Call after navigating away from a WebView to start capture.
  *
  * @returns - A void promise
  */
-function removeAllTrackers$1() {
-    if (!isTrackerInitialised) {
-        return Promise.reject(new Error(logMessages.createTrackerNotSet));
+function startReplay$1() {
+    // On tvOS the native module does not export startReplay (#if !TARGET_OS_TV),
+    // so the method will be undefined. Resolve as a no-op to avoid a runtime throw.
+    if (typeof RNConvivaTracker.startReplay !== 'function') {
+        return Promise.resolve();
     }
-    return Promise.resolve(RNConvivaTracker.removeAllTrackers());
-}
-/**
- * Cleanup
- *
- * @returns - A void promise
- */
-function cleanup$1() {
-    return Promise.resolve(RNConvivaTracker.cleanup());
-}
-/**
- * Get the client id which is in prescribed format.
- *
- * @returns - A promise string if the client if available or genetrated
- */
-function getClientId$1() {
-    return Promise.resolve(RNConvivaTracker.getClientId())
+    return Promise.resolve(RNConvivaTracker.startReplay())
         .catch((error) => {
-        throw new Error(`${logMessages.getClientId} ${error.message}.`);
+        throw new Error(`startReplay failed: ${error.message}`);
     });
 }
 /**
- * Set the client id which is in the prescribed format.
+ * Stop session replay (e.g. before showing a WebView).
  *
- * @param clientId {string} - client id generated for the application in the device
- * @returns - A promise fullfilled if the client id is valid
+ * @returns - A void promise
  */
-function setClientId$1(clid) {
-    // have necessary checks in place
-    if (!clid || clid === "" || clid.split(".").length != 4 || !clid.split(".").every(part => part !== "" && !isNaN(Number(part)))) {
-        return Promise.reject(new Error(logMessages.setClientId));
+function stopReplay$1() {
+    // On tvOS the native module does not export stopReplay (#if !TARGET_OS_TV),
+    // so the method will be undefined. Resolve as a no-op to avoid a runtime throw.
+    if (typeof RNConvivaTracker.stopReplay !== 'function') {
+        return Promise.resolve();
     }
-    return Promise.resolve(RNConvivaTracker.setClientId({ clientId: clid }));
+    return Promise.resolve(RNConvivaTracker.stopReplay())
+        .catch((error) => {
+        throw new Error(`stopReplay failed: ${error.message}`);
+    });
 }
 /**
  * Returns a function to track a SelfDescribing event by a tracker
@@ -1442,7 +4154,7 @@ function setClientId$1(clid) {
  */
 function trackSelfDescribingEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackSelfDescribingEvent$1(namespace, argmap, contexts);
@@ -1456,7 +4168,7 @@ function trackSelfDescribingEvent(namespace) {
  */
 function trackScreenViewEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackScreenViewEvent$1(namespace, argmap, contexts);
@@ -1470,7 +4182,7 @@ function trackScreenViewEvent(namespace) {
  */
 function trackStructuredEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackStructuredEvent$1(namespace, argmap, contexts);
@@ -1484,7 +4196,7 @@ function trackStructuredEvent(namespace) {
  */
 function trackPageView(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackPageView$1(namespace, argmap, contexts);
@@ -1498,7 +4210,7 @@ function trackPageView(namespace) {
  */
 function trackTimingEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackTimingEvent$1(namespace, argmap, contexts);
@@ -1512,7 +4224,7 @@ function trackTimingEvent(namespace) {
  */
 function trackConsentGrantedEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackConsentGrantedEvent$1(namespace, argmap, contexts);
@@ -1526,7 +4238,7 @@ function trackConsentGrantedEvent(namespace) {
  */
 function trackConsentWithdrawnEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackConsentWithdrawnEvent$1(namespace, argmap, contexts);
@@ -1540,7 +4252,7 @@ function trackConsentWithdrawnEvent(namespace) {
  */
 function trackEcommerceTransactionEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackEcommerceTransactionEvent$1(namespace, argmap, contexts);
@@ -1554,7 +4266,7 @@ function trackEcommerceTransactionEvent(namespace) {
  */
 function trackDeepLinkReceivedEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackDeepLinkReceivedEvent$1(namespace, argmap, contexts);
@@ -1568,7 +4280,7 @@ function trackDeepLinkReceivedEvent(namespace) {
  */
 function trackMessageNotificationEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackMessageNotificationEvent$1(namespace, argmap, contexts);
@@ -1582,7 +4294,7 @@ function trackMessageNotificationEvent(namespace) {
  */
 function trackCustomEvent(namespace) {
     return function (eventName, eventData, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackCustomEvent$1(namespace, eventName, eventData, contexts);
@@ -1596,7 +4308,7 @@ function trackCustomEvent(namespace) {
  */
 function trackRevenueEvent(namespace) {
     return function (argmap, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackRevenueEvent$1(namespace, argmap, contexts);
@@ -1604,7 +4316,7 @@ function trackRevenueEvent(namespace) {
 }
 function setCustomTags(namespace) {
     return function (tags, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return setCustomTags$1(namespace, tags, contexts);
@@ -1612,7 +4324,7 @@ function setCustomTags(namespace) {
 }
 function setCustomTagsWithCategory(namespace) {
     return function (category, tags, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return setCustomTagsWithCategory$1(namespace, category, tags, contexts);
@@ -1620,7 +4332,7 @@ function setCustomTagsWithCategory(namespace) {
 }
 function clearCustomTags(namespace) {
     return function (tagKeys, contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return clearCustomTags$1(namespace, tagKeys, contexts);
@@ -1628,7 +4340,7 @@ function clearCustomTags(namespace) {
 }
 function clearAllCustomTags(namespace) {
     return function (contexts = []) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return clearAllCustomTags$1(namespace, contexts);
@@ -1863,7 +4575,7 @@ function getForegroundIndex(namespace) {
  */
 function trackClickEvent(namespace) {
     return function (eventData) {
-        if (!isTrackerInitialised) {
+        if (!getIsInitialised()) {
             return Promise.reject(new Error(logMessages.createTrackerNotSet));
         }
         return trackClickEvent$1(namespace, eventData);
@@ -1956,7 +4668,7 @@ const logError = (message, error, quiet = false) => {
         });
     }
 };
-const handleError = (fn, name = null, quiet = false) => {
+const handleError = (fn, name = '', quiet = false) => {
     return (...args) => {
         try {
             return fn(...args);
@@ -2003,6 +4715,7 @@ const getTargetText = fiberNode => {
     return targetText;
 };
 
+// @ts-nocheck
 var __rest = (undefined) || function (s, e) {
     var t = {};
     for (var p in s)
@@ -2011,7 +4724,7 @@ var __rest = (undefined) || function (s, e) {
     if (s != null && typeof Object.getOwnPropertySymbols === "function")
         for (var i = 0, q = Object.getOwnPropertySymbols(s); i < q.length; i++) {
             if (e.indexOf(q[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, q[i]))
-                t[p[i]] = s[q[i]];
+                t[q[i]] = s[q[i]];
         }
     return t;
 };
@@ -2087,7 +4800,7 @@ class NavigationUtil {
         const paths = this.getActiveRouteNames(navigationState);
         return {
             screen_path: paths.join('::'),
-            screen_name: paths[paths.length - 1],
+            screen_name: paths[paths.length - 1] ?? '',
         };
     }
     // Returns an array of route names, with the root name first, and the most nested name last.
@@ -2109,7 +4822,7 @@ class NavigationUtil {
     }
 }
 
-const version = "0.4.0";
+const version = "0.5.0";
 
 const { Platform } = require('react-native');
 let reactNativeVersionString = null;
@@ -2239,6 +4952,164 @@ const withReactNavigationAutotrack = track => AppContainer => {
 };
 
 /*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * Returns true when any element in `next` has changed relative to `prev`,
+ * using same-value-zero equality (Object.is). Length changes also trigger true.
+ */
+function resetKeysChanged(prev, next) {
+    if (prev.length !== next.length) {
+        return true;
+    }
+    for (let i = 0; i < prev.length; i++) {
+        if (!Object.is(prev[i], next[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * React error boundary that forwards caught render/commit errors to the
+ * Conviva error tracker with `errorSource: 'errorBoundary'`.
+ *
+ * Design notes:
+ *  - Marks the error object in the tracker's DedupGuard BEFORE dispatch so
+ *    the global handler (if the error re-throws up the tree) does not send
+ *    the same error twice.
+ *  - Reset keys mirror the well-known react-error-boundary prop contract.
+ */
+class ConvivaErrorBoundary extends React.Component {
+    state = { error: null, enabled: ConvivaErrorBoundary.readEnabled() };
+    /** Cleanup for the enable-state subscription; set in componentDidMount. */
+    unsubscribeEnabled = null;
+    /** Reads the tracker enable flag defensively (never throws). */
+    static readEnabled() {
+        // Default to enabled so the boundary keeps protecting the tree if the
+        // tracker is in an unexpected state.
+        return safeCall(() => errorTracker.isEnabled(), true);
+    }
+    // `getDerivedStateFromError` cannot read instance/tracker state, so it always
+    // records the error; the enable gate is applied in render() (pass-through
+    // when disabled) and in componentDidCatch (reporting suppressed when disabled).
+    static getDerivedStateFromError(error) {
+        return { error };
+    }
+    componentDidMount() {
+        // fail-silent — subscription failure must not break the boundary.
+        runSafely(() => {
+            // Re-sync in case enable-state changed between field init and mount, then
+            // subscribe for runtime (remote-config-driven) toggles.
+            const current = ConvivaErrorBoundary.readEnabled();
+            if (current !== this.state.enabled) {
+                this.setState({ enabled: current });
+            }
+            this.unsubscribeEnabled = errorTracker.onEnabledChange((enabled) => {
+                this.setState({ enabled });
+            });
+        });
+    }
+    componentWillUnmount() {
+        runSafely(() => {
+            if (this.unsubscribeEnabled !== null) {
+                this.unsubscribeEnabled();
+                this.unsubscribeEnabled = null;
+            }
+        });
+    }
+    componentDidCatch(error, info) {
+        // When error tracking is disabled, the boundary does not intercept: skip
+        // dedup-marking and dispatch entirely (render() rethrows to delegate the
+        // error to a parent boundary). The consumer onError hook is still honoured.
+        if (ConvivaErrorBoundary.readEnabled()) {
+            runSafely(() => {
+                const dedup = errorTracker._getDedupGuard();
+                dedup.markSeen(error);
+                errorTracker._dispatch({
+                    error,
+                    errorSource: 'errorBoundary',
+                    isFatal: false,
+                    isHandled: true,
+                    componentStack: info.componentStack || undefined,
+                    extraAttributes: this.props.name !== undefined ? { boundary: this.props.name } : undefined,
+                });
+            });
+        }
+        if (typeof this.props.onError === 'function') {
+            // consumer callback threw — swallow
+            runSafely(() => this.props.onError(error, info.componentStack));
+        }
+    }
+    componentDidUpdate(prevProps) {
+        if (this.state.error === null) {
+            return;
+        }
+        const prevKeys = prevProps.resetKeys;
+        const nextKeys = this.props.resetKeys;
+        if (prevKeys == null || nextKeys == null) {
+            return;
+        }
+        if (resetKeysChanged(prevKeys, nextKeys)) {
+            this.reset();
+        }
+    }
+    reset = () => {
+        this.setState({ error: null });
+    };
+    render() {
+        const { error, enabled } = this.state;
+        if (error === null) {
+            return this.props.children;
+        }
+        // Disabled (e.g. remote config turned error tracking off): do not intercept.
+        // Rethrowing during this boundary's own render delegates the error to the
+        // nearest parent boundary, so the boundary behaves as if it were absent.
+        // Strict `=== false` so an unset enabled (default true) keeps protecting.
+        if (enabled === false) {
+            throw error;
+        }
+        const { fallback } = this.props;
+        if (typeof fallback === 'function') {
+            return fallback({ error, reset: this.reset });
+        }
+        if (fallback !== undefined) {
+            return fallback;
+        }
+        return null;
+    }
+}
+
+/*
+ * Copyright (c) 2020-2026 Conviva Inc. All rights reserved.
+ *
+ * This program is licensed to you under the Apache License Version 2.0,
+ * and you may not use this file except in compliance with the Apache License Version 2.0.
+ * You may obtain a copy of the Apache License Version 2.0 at http://www.apache.org/licenses/LICENSE-2.0.
+ */
+/**
+ * In-memory bridge adapter used for unit / integration tests and the DemoApp
+ * manual-test harness. Collects every payload the error tracker would have
+ * sent to native so tests can assert on structure and ordering.
+ */
+class MockBridgeAdapter {
+    payloads = [];
+    isAvailable() {
+        return true;
+    }
+    reportJsError(payload) {
+        this.payloads.push(payload);
+    }
+    /** Clears captured payloads. Useful between tests. */
+    clear() {
+        this.payloads = [];
+    }
+}
+
+/*
  * Copyright (c) 2020-2023 Snowplow Analytics Ltd. All rights reserved.
  *
  * This program is licensed to you under the Apache License Version 2.0,
@@ -2253,8 +5124,9 @@ const withReactNavigationAutotrack = track => AppContainer => {
 /**
  * Creates a React Native Tracker object
  *
- * @param networkConfig {Object} - The network configuration
- * @param control {Array} - The tracker controller configuration
+ * @param customerKey {string} - The Conviva customer key for the application
+ * @param appName {string} - The application name reported with events
+ * @param controllerConfig {TrackerControllerConfiguration} - Optional tracker controller configuration
  * @returns The tracker object
  */
 function createTracker(customerKey, appName, 
@@ -2287,6 +5159,10 @@ controllerConfig = {}) {
     const trackCustomEvent$1 = mkMethod(trackCustomEvent(namespace));
     const trackRevenueEvent$1 = mkMethodAlwaysLog(trackRevenueEvent(namespace));
     const trackClickEvent$1 = mkMethod(trackClickEvent(namespace));
+    // trackError uses mkMethodAlwaysLog so misconfigured error paths surface
+    // even in production builds — the whole point of error reporting.
+    const trackError = mkMethodAlwaysLog(trackError$1(namespace));
+    const setJsBundleInfo$1 = mkMethod(setJsBundleInfo(namespace));
     // custom tags contexts
     const setCustomTags$1 = mkMethod(setCustomTags(namespace));
     const setCustomTagsWithCategory$1 = mkMethod(setCustomTagsWithCategory(namespace));
@@ -2351,6 +5227,8 @@ controllerConfig = {}) {
         getBackgroundIndex: getBackgroundIndex$1,
         getForegroundIndex: getForegroundIndex$1,
         trackClickEvent: trackClickEvent$1,
+        trackError,
+        setJsBundleInfo: setJsBundleInfo$1,
     });
 }
 /**
@@ -2400,11 +5278,78 @@ function setClientId(clientId) {
     return Promise.resolve(setClientId$1(clientId))
         .catch((e) => errorHandler(e));
 }
+/**
+ * Starts (or resumes) Conviva Session Replay capture for the current session.
+ * Useful for resuming capture after it was paused via {@link stopReplay} —
+ * for example, after dismissing a WebView, which cannot be captured.
+ *
+ * @returns - A void promise
+ */
+function startReplay() {
+    return Promise.resolve(startReplay$1())
+        .catch((e) => errorHandler(e));
+}
+/**
+ * Pauses Conviva Session Replay capture for the current session.
+ * Call before presenting content that should not be captured (e.g. a WebView),
+ * then resume with {@link startReplay}.
+ *
+ * @returns - A void promise
+ */
+function stopReplay() {
+    return Promise.resolve(stopReplay$1())
+        .catch((e) => errorHandler(e));
+}
 const autocaptureNavigationTrack = handleError((payload) => {
     checkDisplayNamePlugin();
     trackScreenViewEvent('CAT')(payload).catch((e) => errorHandler(e));
 }, 'Event autocapture', true);
+// /**
+//  * Returns a function to track click event.
+//  *
+//  * @param appContainer {AppContainer} - The root NavigationContainer of the application
+//  * @returns - A function to track navigation event
+//  */
+// function withReactNavigationAutotrack(appContainer: any): Promise<any> {
+//   return Promise.resolve(withReactNavigationAutotrack(autocaptureNavigationTrack(appContainer)))
+//     .catch((error) => errorHandler(error));
+// }
+/**
+ * Standalone top-level trackError that can be imported without a tracker
+ * instance reference. Uses the default "CAT" namespace, mirroring the
+ * tracker method created inside createTracker().
+ *
+ * Routing is driven by `argmap.isFatal`: fatal errors are reported through the
+ * application-error pipeline (CRASH classification), while non-fatal errors are
+ * reported as a dedicated non-fatal error event. Always resolves — failures are
+ * swallowed so consumer flow is never disrupted.
+ *
+ * @param argmap {ErrorEventProps} - The error payload (message, stackTrace, isFatal, attributes, …)
+ * @param contexts {EventContext[]} - Optional custom contexts attached to the event
+ * @returns - A void promise
+ */
+function trackError(argmap, contexts = []) {
+    return trackError$1('CAT')(argmap, contexts).catch((e) => errorHandler(e));
+}
+/**
+ * Native manual-masking sentinel for Conviva Session Replay.
+ *
+ * Carried via the React Native `nativeID` prop on both Android and iOS.
+ * The iOS replay SDK reads `nativeID` / `nativeId` directly from the view
+ * (Paper / Fabric respectively), so no accessibility props are needed.
+ * `nativeID` does not collide with E2E selectors (`testID`) or screen
+ * readers (`accessibilityLabel`) and blocks view flattening without
+ * requiring `collapsable: false`.
+ */
+const CR_NO_CAPTURE = 'cr-no-capture';
+/**
+ * Spread on the View or Text that holds sensitive content (Paper + Fabric):
+ *   <Text {...crNoCaptureProps}>Secret</Text>
+ *   <View {...crNoCaptureProps}><SensitiveBlock /></View>
+ */
+const crNoCaptureProps = { nativeID: CR_NO_CAPTURE };
 const autocaptureTrack = handleError((payload) => {
+    checkDisplayNamePlugin();
     trackClickEvent('CAT')(payload).catch((e) => errorHandler(e));
 }, 'Event autocapture', true);
 var index = {
@@ -2412,5 +5357,5 @@ var index = {
     withReactNavigationAutotrack: withReactNavigationAutotrack(autocaptureNavigationTrack)
 };
 
-export { autocaptureNavigationTrack, cleanup, createTracker, index as default, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, withReactNavigationAutotrack };
+export { CR_NO_CAPTURE, ConvivaErrorBoundary, MockBridgeAdapter, autocaptureNavigationTrack, cleanup, crNoCaptureProps, createTracker, index as default, errorTracker, getClientId, getWebViewCallback, removeAllTrackers, removeTracker, setClientId, startReplay, stopReplay, trackError, withReactNavigationAutotrack };
 //# sourceMappingURL=conviva-react-native-appanalytics.js.map

@@ -16,9 +16,10 @@ Pod::Spec.new do |s|
 
   s.source       = { :git => "https://github.com/Conviva-Internal/conviva-react-native-tracker.git", :tag => "#{s.version}" }
   s.source_files = "ios/**/*.{h,m}"
+  s.exclude_files = "ios/Tests/**/*"
 
   s.requires_arc = true
 
   s.dependency "React-Core"
-  s.dependency "ConvivaAppAnalytics", "1.12.0"
+  s.dependency "ConvivaAppAnalytics", "1.13.0"
 end
