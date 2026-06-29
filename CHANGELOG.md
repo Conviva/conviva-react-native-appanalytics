@@ -1,7 +1,7 @@
 
 # Changelog
 
-## 0.5.0 (24/Jun/2026)
+## 0.5.0 (28/Jun/2026)
 - Adds React Native JS error tracking: automatic capture of uncaught errors and unhandled promise rejections with zero code changes.
 - Adds `ConvivaErrorBoundary` to capture render-phase errors in the React component tree.
 - Adds the `trackError(...)` API for manual error reporting with optional custom attributes.
