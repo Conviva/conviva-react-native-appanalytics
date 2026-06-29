@@ -7,7 +7,7 @@ Single source of truth. Governs: Cursor, Claude Code, Codex, ChatGPT, Gemini CLI
 1. State: "I have read AGENTS.md and will follow its contract."
 2. Ask developer for all inputs in Section 3 before writing any code.
 3. Seed task list from Section 17 before writing any code.
-4. Execute Sections 4-17 in order. Every Section 18 row must appear in your response.
+4. Execute Sections 4-17 in order, including lettered subsections in sequence (e.g. 16a comes after 16, before 17). Every Section 18 row must appear in your response.
 5. If you cannot proceed without violating a rule, stop and ask.
 
 ---
@@ -354,7 +354,7 @@ See `AGENTS-snippets.md` for complete, copy-ready snippets.
 - In the root component file (`App.tsx`, `App.js`, or `index.js`), add a side-effect import at the top: `import './conviva'`. Do not call `createTracker` there.
 - In any other file that needs the tracker (e.g. Redux action files, hooks), import the exported instance using the project's path alias if available (e.g. `import { tracker } from '@src/conviva'`), otherwise use a relative path.
 - Before creating `src/conviva.ts`, check whether a path alias for `src/` is configured in `babel.config.js` or `tsconfig.json` (e.g. `@src`). Use that alias in all imports of the tracker across the project.
-- Forbidden: passing a third `controllerConfig` argument unless explicitly instructed by the developer.
+- Forbidden: passing a third `controllerConfig` argument unless explicitly instructed by the developer. A developer request to configure WebView CLID sync (Section 16) or error tracking (Section 16a) **is** such an instruction. When more than one such config is requested, pass a **single** third-argument object and merge all requested keys (e.g. `clidSyncConfig`, `errorTracking`) into it — never pass two third arguments.
 - Forbidden: calling `createTracker` anywhere other than `src/conviva.ts` / `src/conviva.js`.
 - Import: `import { createTracker } from '@convivainc/conviva-react-native-appanalytics';`
 
@@ -432,6 +432,14 @@ See `AGENTS-snippets.md` -> React Navigation Autotracking for complete JS and TS
 | `getWebViewCallback()` | WebView event bridge |
 | `getClientId()` | Get client ID |
 | `setClientId(clientId)` | Set client ID |
+| `createTracker(customerKey, appName, { errorTracking })` | Configure JS error tracking; pass `errorTracking: false` to disable (only if developer requests) |
+| `trackError({message, ...})` | Manually report an error (standalone import) |
+| `tracker.trackError({message, ...})` | Manually report an error (tracker instance) |
+| `ConvivaErrorBoundary` | React component that captures render-phase errors |
+| `errorTracker.addAttribute(key, value)` | Attach a custom attribute to all subsequent errors |
+| `errorTracker.removeAttribute(key)` | Remove a previously added error attribute |
+| `errorTracker.setEnabled(bool)` | Toggle error capture at runtime |
+| `errorTracker.setRateLimitingEnabled(bool)` | Toggle error rate limiting at runtime |
 | `removeTracker(namespace)` | Remove a tracker |
 | `removeAllTrackers()` | Remove all trackers |
 | `cleanup()` | Cleanup |
@@ -508,6 +516,71 @@ If the developer mentions opening web content outside `react-native-webview`, au
 
 ---
 
+## 16a. Error Tracking (Optional)
+
+JS error tracking is **on by default** and requires **no code**. Once `createTracker(...)` runs (Section 10), the SDK automatically captures uncaught JS errors, unhandled promise rejections, and native fatal crashes, each tagged with the current session ID and user ID. **Automatic capture is already active — do not add, import, or configure anything to enable it.**
+
+Everything in this section is **optional** and must be added **only when the developer asks for it in Step 1**. If you do nothing, automatic capture still works.
+
+---
+
+**Step 1 — Inform the developer and ask (required):**
+
+You must surface the optional controls — the developer cannot request what they have not been shown. Ask verbatim:
+
+> "Conviva automatically captures JavaScript errors (uncaught errors and unhandled promise rejections) and native crashes as soon as the tracker initializes — this is already on and needs no code. Optionally, I can also:
+> 1. **Disable** error tracking entirely.
+> 2. **Tune** capture — rate limiting, suppress-in-dev, or a `beforeCapture` filter.
+> 3. Add **`ConvivaErrorBoundary`** around a screen or subtree to catch render-phase errors and show a fallback UI.
+> 4. Add **`trackError(...)`** calls so errors you already handle in `try/catch` are reported.
+> 5. Attach **custom attributes** to every captured error.
+>
+> Which of these (if any) would you like? Default: keep automatic capture as-is and add nothing."
+
+| Developer response | Action |
+|---|---|
+| No reply / "none" / "keep defaults" | Add nothing. Record in Section 18: "Error tracking: automatic capture active; no optional controls requested." Move to Section 17. |
+| Selects one or more options | Apply only the matching steps below. |
+
+If the developer chooses **Option 1 (Disable)**, do **not** also apply Steps 4–6: a disabled module does not send errors to Conviva, so `ConvivaErrorBoundary`, `trackError`, and attributes would have no effect. Point this out if the developer asks for both.
+
+---
+
+**Step 2 — Disable error tracking (Option 1):**
+
+Pass `errorTracking: false` as the third argument to `createTracker` in `src/conviva.ts` (or `src/conviva.js`). See **AGENTS-snippets.md § Error Tracking**. Read the third-argument merge rule in **Step 7** before editing.
+
+**Step 3 — Tune capture via config (Option 2):**
+
+Pass an `errorTracking` object as the third argument to `createTracker`. **Use only the keys in the "Allowed `errorTracking` config keys" table in AGENTS-snippets.md § Error Tracking — do not invent config keys.** Read the third-argument merge rule in **Step 7** before editing.
+
+**Step 4 — Capture render-phase errors with `ConvivaErrorBoundary` (Option 3):**
+
+Render-phase errors are not caught by automatic capture. Import `ConvivaErrorBoundary` and wrap **only** the screen/subtree the developer named. Use only the props in Section 13. See **AGENTS-snippets.md § Error Tracking** for the snippet.
+
+**Step 5 — Manual reporting with `trackError` (Option 4):**
+
+Use `trackError({ message, ... })` (standalone import) or `tracker.trackError({ message, ... })` inside the developer's `try/catch`. `message` is required; all other fields are optional. `trackError` is a standalone export and needs no `tracker` instance. See **AGENTS-snippets.md § Error Tracking**.
+
+**Step 6 — Custom attributes (Option 5):**
+
+Use `errorTracker.addAttribute(key, value)` / `errorTracker.removeAttribute(key)`. `errorTracker` is a standalone singleton export — do not call it on the `tracker` instance and do not null-check it. See **AGENTS-snippets.md § Error Tracking**.
+
+**Step 7 — Third-argument merge rule (when applying Step 2 or 3):**
+
+`createTracker` accepts **one** third-argument object. Adding `errorTracking` here is the developer-authorized exception to the "no third argument" rule in Sections 4 and 10. If `src/conviva.ts` / `src/conviva.js` already passes a third argument (for example `clidSyncConfig` from Section 16), **merge `errorTracking` into the same object** — do not add a second argument and do not overwrite the existing keys. See the merged example in **AGENTS-snippets.md § Error Tracking**.
+
+---
+
+**Rules:**
+- Use only the symbols in Section 13 and the config keys listed in AGENTS-snippets.md § Error Tracking. Do not invent error-tracking APIs or config keys.
+- Apply minimal, localized edits only — error-tracking config goes in `src/conviva.ts` / `src/conviva.js`; `ConvivaErrorBoundary` wraps only the requested subtree.
+- Never execute shell commands. File edits only.
+
+Record in Section 18: automatic capture active; the developer was asked (Step 1); and any optional controls applied (or "none requested").
+
+---
+
 ## 17. Build and Validation
 
 **Build verification:** Ask developer to run both Android and iOS debug builds. Share any error output and fix using only Section 13 allowed symbols.
@@ -540,6 +613,7 @@ Seed your task list from this table before writing any code. Every row must appe
 | Custom events and tags | One code snippet each (if requested) |
 | PageView tracking | Implemented (if requested) or skipped |
 | WebView CLID sync | One of: (a) skipped — `react-native-webview` not found; (b) skipped — version < 11; (c) skipped by developer; (d) enabled — domains via remote config only; (e) configured with domains [list] and `clidSyncConfig` added to `createTracker`; non-`react-native-webview` surfaces noted if raised by developer |
+| Error tracking | Automatic capture active (no code added) by default; developer asked which optional controls they want (Section 16a Step 1); note any controls applied on request — `errorTracking` config (tuned or `false`), `ConvivaErrorBoundary` wraps, `trackError` calls, `errorTracker` attributes; or "none requested" |
 | AGP compatibility check | Detected AGP version; if >= 9.0, confirm plugin >= 0.3.7; or skipped if no Android setup |
 | Build verification | Outcome for both Android and iOS |
 | Product validation | Ask developer to validate in Pulse App -> Activation Module -> Live Lens |

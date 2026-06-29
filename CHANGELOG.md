@@ -1,6 +1,13 @@
 
 # Changelog
 
+## 0.5.0 (28/Jun/2026)
+- Adds React Native JS error tracking: automatic capture of uncaught errors and unhandled promise rejections with zero code changes.
+- Adds `ConvivaErrorBoundary` to capture render-phase errors in the React component tree.
+- Adds the `trackError(...)` API for manual error reporting with optional custom attributes.
+- Configurable via both the `errorTracking` option on `createTracker` and remote config.
+- Using latest android(v1.5.0) and ios(v1.13.0) native packages.
+
 ## 0.4.0 (22/May/2025)
 - Adds automatic client ID synchronization to in-app WebViews for RN 0.68+ with react-native-webview v11+, enabling unified user identity across native and web surfaces without developer code changes.
 - Using latest android(v1.4.0) and ios(v1.12.0) native packages.
