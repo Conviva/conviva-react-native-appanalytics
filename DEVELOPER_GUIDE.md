@@ -6,6 +6,7 @@ Use the Conviva React Native App Analytics SDK to auto-collect events and track 
 - [Quick Start](#quick-start)
 - [More Features](#more-features)
 - [Error Tracking](#error-tracking)
+- [Cohort Replay (Beta)](#cohort-replay-beta)
 - [Auto-collected Events](#auto-collected-events)
 - [FAQ](#faq)
 
@@ -789,6 +790,72 @@ try {
 
 Minified, production stack traces are symbolicated automatically by Conviva's backend — no source-map upload step is required in your build.
 Note: For apps that ship JS via OTA updates, supply a `bundleId` in the `errorTracking` config so the backend can match the running bundle to its source maps.
+
+### Cohort Replay (Beta)
+
+> Available from React Native SDK [v0.5.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.5.0). Not supported on tvOS.
+
+Cohort Replay captures session replays of your app so you can see how users interact with it. Capture is powered by Conviva's native replay SDKs — see [conviva-android-replay](https://github.com/Conviva/conviva-android-replay) and [conviva-ios-replay](https://github.com/Conviva/conviva-ios-replay) for how it works, its capabilities, and its limitations.
+
+**Enablement and sampling are governed entirely by remote config** — contact Conviva to enable Cohort Replay for your account. `startReplay()` / `stopReplay()` only pause and resume capture within a session that remote config has already enabled; they do not turn the feature on.
+
+#### Native Setup
+
+Cohort Replay requires the native replay SDK to be added manually to your app's native projects (`android/` and `ios/`), in addition to the React Native package. Unlike the base SDK, the replay SDK is **not** auto-linked. Follow the platform integration guides:
+
+- **Android** (`android/`) — [conviva-android-replay](https://github.com/Conviva/conviva-android-replay)
+- **iOS** (`ios/`) — [conviva-ios-replay](https://github.com/Conviva/conviva-ios-replay)
+
+Once the native replay SDK is present, it initializes automatically with the Conviva tracker — no extra JavaScript setup is required to begin capturing.
+
+#### Pause and Resume Around WebViews
+
+`stopReplay()` pauses capture and `startReplay()` resumes it for the current session. The primary use case is WebViews, whose individual elements the native replay recorder cannot mask — call `stopReplay()` before presenting web content and `startReplay()` after it is dismissed.
+
+```js
+import { startReplay, stopReplay } from '@convivainc/conviva-react-native-appanalytics';
+
+// Before presenting a WebView (or any content that must not be captured):
+try {
+  await stopReplay();
+} catch (error) {
+  console.error(error);
+}
+
+// After the WebView is dismissed:
+try {
+  await startReplay();
+} catch (error) {
+  console.error(error);
+}
+```
+
+> On tvOS the native module does not export `startReplay` / `stopReplay`; both resolve to a no-op.
+
+#### Masking Sensitive Content
+
+By default, the replay SDK masks common sensitive fields — email addresses, passwords (including payment-card numbers and one-time passcodes), and telephone numbers — on both Android and iOS.
+
+To mask any other `View` or `Text` that holds sensitive content, spread `crNoCaptureProps` on it:
+
+```jsx
+import { crNoCaptureProps, CR_NO_CAPTURE } from '@convivainc/conviva-react-native-appanalytics';
+
+<Text {...crNoCaptureProps}>{secretToken}</Text>
+
+<View {...crNoCaptureProps}>
+  <SensitiveBlock />
+</View>
+
+// Equivalent when the nativeID must be set directly:
+<View nativeID={CR_NO_CAPTURE}>
+  <SensitiveBlock />
+</View>
+```
+
+`crNoCaptureProps` sets the React Native `nativeID` to `cr-no-capture`, which the native replay SDKs honor as a masking marker on both platforms.
+
+> **Configure masking before enabling replay in production.** Automatic masking is best-effort and only as reliable as the metadata present in your app; where input types, autofill hints, or accessibility labels are missing or incomplete, masking cannot be guaranteed. Review your recorded replays and confirm that all sensitive content is masked before rolling out to production, and re-test after changing masking settings or upgrading your UI frameworks. Mask any sensitive or PII content not covered automatically with `crNoCaptureProps`.
 
 ---
 
