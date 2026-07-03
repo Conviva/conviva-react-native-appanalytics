@@ -6,6 +6,7 @@
 - Adds `ConvivaErrorBoundary` to capture render-phase errors in the React component tree.
 - Adds the `trackError(...)` API for manual error reporting with optional custom attributes.
 - Configurable via both the `errorTracking` option on `createTracker` and remote config.
+- Introduces [Cohort Replay (Beta)](DEVELOPER_GUIDE.md#cohort-replay-beta) support for React Native applications.
 - Using latest android(v1.5.0) and ios(v1.13.0) native packages.
 
 ## 0.4.0 (22/May/2025)
