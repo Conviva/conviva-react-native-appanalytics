@@ -142,26 +142,26 @@ class MyApplication : Application() {
 
 #### 2b. Add the Gradle Plugin (for button click and network request auto-collection)
 
-**For Android Gradle Plugin (AGP) >= 8.0 - use plugin version 0.3.x:**
+**For Android Gradle Plugin (AGP) >= 8.0 - use plugin version 0.4.0:**
 
 In the **root** `android/build.gradle`:
 ```groovy
 buildscript {
     dependencies {
         // ...
-        classpath 'com.conviva.sdk:android-plugin:0.3.x'
+        classpath 'com.conviva.sdk:android-plugin:0.4.0'
     }
 }
 ```
 
-**For AGP below 8.0 - use plugin version 0.2.x:**
+**For AGP below 8.0 - use plugin version 0.4.0:**
 
 In the **root** `android/build.gradle`:
 ```groovy
 buildscript {
     dependencies {
         // ...
-        classpath 'com.conviva.sdk:android-plugin:0.2.x'
+        classpath 'com.conviva.sdk:android-plugin:0.4.0'
     }
 }
 ```
@@ -581,7 +581,7 @@ The web app must use the Conviva WebView tracker to send events.
 
 ### WebView Client ID Sync
 
-> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+, [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+, and Android plugin [v0.3.9](https://github.com/Conviva/conviva-android-plugin/releases/tag/v0.3.9)+. JavaScript must be enabled in the WebView for this feature to work.
+> Available from React Native SDK [v0.4.0](https://github.com/Conviva/conviva-react-native-appanalytics/releases/tag/v0.4.0). Requires React Native 0.68+, [`react-native-webview`](https://github.com/react-native-webview/react-native-webview) v11+, and Android plugin [v0.4.0](https://github.com/Conviva/conviva-android-plugin/releases/tag/v0.4.0). JavaScript must be enabled in the WebView for this feature to work.
 
 The SDK automatically shares the native client ID with in-app WebViews, linking native and web sessions to the same user. It uses two mechanisms:
 

@@ -8,8 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		0562F54E146600A44BDEF45D /* libPods-RNSnowplowTracker.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8E15379B78A468FF69B0BDCA /* libPods-RNSnowplowTracker.a */; };
+		0824F638375F5D434F7EA77A /* RNConfigUtilsSessionReplayTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 7878D5DEEBF1D00FF730C595 /* RNConfigUtilsSessionReplayTests.m */; };
+		85348F4FB7CB47DAB18BA69A /* libPods-RNSnowplowTracker.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8E15379B78A468FF69B0BDCA /* libPods-RNSnowplowTracker.a */; };
 		75D5EB7F2293B206005C8629 /* RNConvivaAppAnalytics.h in Headers */ = {isa = PBXBuildFile; fileRef = B3E7B5881CC2AC0600A0062D /* RNConvivaAppAnalytics.h */; settings = {ATTRIBUTES = (Private, ); }; };
+		89955E514FDBFC79986D4768 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 00B82F4A45B5AAB6AD717FCB /* Foundation.framework */; };
 		B3E7B58A1CC2AC0600A0062D /* RNConvivaAppAnalytics.m in Sources */ = {isa = PBXBuildFile; fileRef = B3E7B5891CC2AC0600A0062D /* RNConvivaAppAnalytics.m */; };
+		B5AE247828E68A646508126D /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 25D7EF45C4EBE7306AAF8C7E /* XCTest.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -25,8 +29,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		00B82F4A45B5AAB6AD717FCB /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		134814201AA4EA6300B7C361 /* libRNConvivaAppAnalytics.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRNConvivaAppAnalytics.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		25D7EF45C4EBE7306AAF8C7E /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
+		3DABF6276DE5CF82C6BBDF96 /* RNConvivaAppAnalyticsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RNConvivaAppAnalyticsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D25182CF98251495D063E8A /* Pods-RNConvivaAppAnalytics.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RNConvivaAppAnalytics.release.xcconfig"; path = "Target Support Files/Pods-RNSnowplowTracker/Pods-RNConvivaAppAnalytics.release.xcconfig"; sourceTree = "<group>"; };
+		7878D5DEEBF1D00FF730C595 /* RNConfigUtilsSessionReplayTests.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = RNConfigUtilsSessionReplayTests.m; path = Tests/RNConfigUtilsSessionReplayTests.m; sourceTree = "<group>"; };
 		7D2A97B8BEC452B270B0AA54 /* Pods-RNConvivaAppAnalytics.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RNConvivaAppAnalytics.debug.xcconfig"; path = "Target Support Files/Pods-RNSnowplowTracker/Pods-RNConvivaAppAnalytics.debug.xcconfig"; sourceTree = "<group>"; };
 		8E15379B78A468FF69B0BDCA /* libPods-RNSnowplowTracker.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-RNSnowplowTracker.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3E7B5881CC2AC0600A0062D /* RNConvivaAppAnalytics.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RNConvivaAppAnalytics.h; sourceTree = "<group>"; };
@@ -39,6 +47,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				0562F54E146600A44BDEF45D /* libPods-RNSnowplowTracker.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0C1D934A19EC41A854341B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89955E514FDBFC79986D4768 /* Foundation.framework in Frameworks */,
+				B5AE247828E68A646508126D /* XCTest.framework in Frameworks */,
+				85348F4FB7CB47DAB18BA69A /* libPods-RNSnowplowTracker.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -57,6 +75,8 @@
 			isa = PBXGroup;
 			children = (
 				8E15379B78A468FF69B0BDCA /* libPods-RNSnowplowTracker.a */,
+				70D4C52E5AFD90778CF434C9 /* iOS */,
+				25D7EF45C4EBE7306AAF8C7E /* XCTest.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -69,7 +89,17 @@
 				134814211AA4EA7D00B7C361 /* Products */,
 				7FFB9F310E25AB7A09247AE0 /* Pods */,
 				47AD2C542223E36A7CFE72AE /* Frameworks */,
+				3DABF6276DE5CF82C6BBDF96 /* RNConvivaAppAnalyticsTests.xctest */,
+				D0D6C49719CF56F24AD20A12 /* Tests */,
 			);
+			sourceTree = "<group>";
+		};
+		70D4C52E5AFD90778CF434C9 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				00B82F4A45B5AAB6AD717FCB /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 		7FFB9F310E25AB7A09247AE0 /* Pods */ = {
@@ -79,6 +109,15 @@
 				4D25182CF98251495D063E8A /* Pods-RNConvivaAppAnalytics.release.xcconfig */,
 			);
 			path = Pods;
+			sourceTree = "<group>";
+		};
+		D0D6C49719CF56F24AD20A12 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				7878D5DEEBF1D00FF730C595 /* RNConfigUtilsSessionReplayTests.m */,
+			);
+			name = Tests;
+			path = Tests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -114,6 +153,23 @@
 			productReference = 134814201AA4EA6300B7C361 /* libRNConvivaAppAnalytics.a */;
 			productType = "com.apple.product-type.library.static";
 		};
+		F09EB5A087FB15CB4F98A4C7 /* RNConvivaAppAnalyticsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2C10E5139341DB997FF4D2F0 /* Build configuration list for PBXNativeTarget "RNConvivaAppAnalyticsTests" */;
+			buildPhases = (
+				D35C399AC1F6E89071498A4F /* Sources */,
+				D0C1D934A19EC41A854341B0 /* Frameworks */,
+				2B2A9FA3F64DB15785C29FB7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RNConvivaAppAnalyticsTests;
+			productName = RNConvivaAppAnalyticsTests;
+			productReference = 3DABF6276DE5CF82C6BBDF96 /* RNConvivaAppAnalyticsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -142,9 +198,20 @@
 			projectRoot = "";
 			targets = (
 				58B511DA1A9E6C8500147676 /* RNConvivaAppAnalytics */,
+				F09EB5A087FB15CB4F98A4C7 /* RNConvivaAppAnalyticsTests */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2B2A9FA3F64DB15785C29FB7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		4CCD70066BBE9C051429F7AF /* [CP] Check Pods Manifest.lock */ = {
@@ -180,9 +247,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D35C399AC1F6E89071498A4F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0824F638375F5D434F7EA77A /* RNConfigUtilsSessionReplayTests.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		4AA4C70FA7C2280268A97F2D /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D25182CF98251495D063E8A /* Pods-RNConvivaAppAnalytics.release.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include,
+					"$(SRCROOT)/../../../React/**",
+					"$(SRCROOT)/../../react-native/React/**",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "-ObjC";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		58B511ED1A9E6C8500147676 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -298,9 +392,36 @@
 			};
 			name = Release;
 		};
+		CB6BBA79CCF0A5AC90D4ACC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7D2A97B8BEC452B270B0AA54 /* Pods-RNConvivaAppAnalytics.debug.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include,
+					"$(SRCROOT)/../../../React/**",
+					"$(SRCROOT)/../../react-native/React/**",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "-ObjC";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		2C10E5139341DB997FF4D2F0 /* Build configuration list for PBXNativeTarget "RNConvivaAppAnalyticsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4AA4C70FA7C2280268A97F2D /* Release */,
+				CB6BBA79CCF0A5AC90D4ACC1 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		58B511D61A9E6C8500147676 /* Build configuration list for PBXProject "RNConvivaAppAnalytics" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

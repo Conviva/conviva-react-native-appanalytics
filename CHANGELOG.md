@@ -1,6 +1,10 @@
 
 # Changelog
 
+## 0.5.1 (15/Oct/2026)
+- Using latest android(v1.5.1) and ios(v1.13.0) native packages.
+- Android apps must use [conviva-android-plugin:0.4.0](https://github.com/Conviva/conviva-android-plugin/releases/tag/v0.4.0), required by android tracker 1.5.1.
+
 ## 0.5.0 (28/Jun/2026)
 - Adds React Native JS error tracking: automatic capture of uncaught errors and unhandled promise rejections with zero code changes.
 - Adds `ConvivaErrorBoundary` to capture render-phase errors in the React component tree.
